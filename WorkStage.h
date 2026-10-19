@@ -19,7 +19,7 @@ class WorkStage : public WorkComponent
 
         void execute() override;
         WorkComponent* clone() override;
-        //WorkIterator* createIterator() override;
+        WorkIterator* createIterator() override;
 };
 
 #endif
