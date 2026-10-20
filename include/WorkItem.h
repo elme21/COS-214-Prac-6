@@ -2,6 +2,7 @@
 #define WORKITEM_H
 
 #include "WorkComponent.h"
+#include "Colleague.h"
 
 class WorkItemState;
 class WorkCoordinator;
@@ -17,7 +18,7 @@ class WorkCoordinator;
  * WorkItemState (friend) may change the state or assignee during normal
  * transitions; restoreState() is the silent back door used only by command undo.
  */
-class WorkItem : public WorkComponent {
+class WorkItem : public WorkComponent, public Colleague {
 public:
     WorkItem();
     virtual ~WorkItem();
@@ -46,8 +47,8 @@ public:
     Participant* getAssignee() const override;
     void restoreState(const WorkItemState* state, Participant* assignee) override;
 
-    // Mediator (Member 4) - stored but not used by this class.
-    void setCoordinator(WorkCoordinator* coordinator);
+    void receive(const std::string& event, Colleague* source) override;
+    bool isComplete() const;
 
 protected:
     // Template Method hooks. Decorators wrap only the public operations.
@@ -65,8 +66,6 @@ private:
     const WorkItemState* state;
     // Current assignee. NON-OWNING: Participants are owned by the resource layer (Member 4).
     Participant* assignee;
-    // Mediator. NON-OWNING: owned by Member 4's ResourceCoordinator.
-    WorkCoordinator* coordinator;
 };
 
 #endif
