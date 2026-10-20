@@ -3,13 +3,21 @@
 
 #include "WorkIterator.h"
 
-class ReadyTasktIterator : public WorkIterator
+class ReadyTaskIterator : public WorkIterator
 {
     public:
-        bool hasNext();
-        WorkComponent* next();
-        void reset();
-        WorkComponent* currentItem();
+        ReadyTaskIterator();
+        bool hasNext() override;
+        WorkComponent* next() override;
+        void reset() override;
+        WorkComponent* currentItem() override;
+        
+        /*
+        WorkComponent* first() override;
+        WorkComponent* next() override;
+        bool isDone() override;
+        WorkComponent* currentItem() override;
+        */
 };
 
 #endif 

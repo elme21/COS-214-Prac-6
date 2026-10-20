@@ -5,6 +5,8 @@
 
 #include <vector>
 
+class WorkIterator;
+
 class WorkStage : public WorkComponent
 {
     private:

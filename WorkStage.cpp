@@ -1,4 +1,5 @@
 #include "WorkStage.h"
+#include "DepthFirstIterator.h"
 
 WorkStage::~WorkStage() 
 {
@@ -11,7 +12,10 @@ WorkStage::~WorkStage()
 
 void WorkStage::add(WorkComponent* c)
 {
-    children.push_back(c);
+    if (c != nullptr)
+    {
+        children.push_back(c);    
+    }
 }
 
 
@@ -30,6 +34,10 @@ void WorkStage::remove(WorkComponent* c)
 
 WorkComponent* WorkStage::getChild(int i)
 {
+    if (i < 0 || i >= children.size()) 
+    {
+        return nullptr;
+    }
     return children[i];
 }
 
@@ -46,4 +54,10 @@ void WorkStage::execute()
 WorkComponent *WorkStage::clone()
 {
     //Part of Prototype
+}
+
+
+WorkIterator* WorkStage::createIterator()
+{
+    return new DepthFirstIterator(this);
 }

@@ -1,7 +1,7 @@
 #ifndef WORKITERATOR_H
 #define WORKITERATOR_H
 
-#include "WorkComponent.h"
+class WorkComponent;
 
 class WorkIterator
 {
@@ -10,6 +10,13 @@ class WorkIterator
         virtual WorkComponent* next() = 0;
         virtual void reset() = 0;
         virtual WorkComponent* currentItem() = 0;
+
+        /*
+        WorkComponent* first() = 0;
+        WorkComponent* next() = 0;
+        bool isDone() = 0;
+        WorkComponent* currentItem() = 0;
+        */
 };
 
 #endif

@@ -6,10 +6,18 @@
 class DepthFirstIterator : public WorkIterator
 {
     public:
-        bool hasNext();
-        WorkComponent* next();
-        void reset();
-        WorkComponent* currentItem();
+        DepthFirstIterator(WorkComponent* c);
+        bool hasNext() override;
+        WorkComponent* next() override;
+        void reset() override;
+        WorkComponent* currentItem() override;
+
+        /*
+        WorkComponent* first() override;
+        WorkComponent* next() override;
+        bool isDone() override;
+        WorkComponent* currentItem() override;
+        */
 };
 
 #endif
