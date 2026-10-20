@@ -28,10 +28,8 @@ bool WorkComponentDecorator::reject() { return wrapped->reject(); }
 bool WorkComponentDecorator::cancel() { return wrapped->cancel(); }
 bool WorkComponentDecorator::escalate() { return wrapped->escalate(); }
 
-int WorkComponentDecorator::getPriority() const { return wrapped->getPriority(); }
-
-WorkItemState* WorkComponentDecorator::getState() const { return wrapped->getState(); }
+const WorkItemState* WorkComponentDecorator::getState() const { return wrapped->getState(); }
 Participant* WorkComponentDecorator::getAssignee() const { return wrapped->getAssignee(); }
-void WorkComponentDecorator::restoreState(WorkItemState* state, Participant* assignee) {
+void WorkComponentDecorator::restoreState(const WorkItemState* state, Participant* assignee) {
     wrapped->restoreState(state, assignee);
 }
