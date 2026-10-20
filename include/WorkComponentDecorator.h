@@ -28,11 +28,9 @@ public:
     bool cancel() override;
     bool escalate() override;
 
-    int getPriority() const override;
-
-    WorkItemState* getState() const override;
+    const WorkItemState* getState() const override;
     Participant* getAssignee() const override;
-    void restoreState(WorkItemState* state, Participant* assignee) override;
+    void restoreState(const WorkItemState* state, Participant* assignee) override;
 
     // clone() stays pure: each concrete decorator copies itself.
 
