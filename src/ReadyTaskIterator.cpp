@@ -5,7 +5,6 @@
 ReadyTaskIterator::ReadyTaskIterator(WorkComponent* r) : root(r), forward(nullptr), current(nullptr) { reset(); }
 
 
-// The single definition of "ready". Change only this function.
 bool ReadyTaskIterator::isReadyItem(WorkComponent* node) 
 {
     const WorkItemState* state = node->getState();
@@ -37,7 +36,7 @@ void ReadyTaskIterator::reset()
 }
 
 
-// Depth-first walk that stops at the next ready leaf.
+//Depth-first walk that stops at the next ready leaf.
 void ReadyTaskIterator::advance() 
 {
     forward = nullptr;

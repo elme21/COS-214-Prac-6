@@ -24,7 +24,7 @@ bool DepthFirstIterator::hasNext()
     return !pending.empty();
 }
 
-// Pre-order visiting: visit a node, then its children left to right.
+//Pre-order visiting: visit a node, then its children left to right.
 WorkComponent* DepthFirstIterator::next() 
 {
     if (pending.empty()) 
@@ -34,14 +34,14 @@ WorkComponent* DepthFirstIterator::next()
     WorkComponent* node = pending.top();
     pending.pop();
 
-    // Count children: getChild returns nullptr once the index is out of range
+    //Count children: getChild returns nullptr once the index is out of range
     int n = 0;
     while (node->getChild(n) != nullptr) 
     {
         ++n;
     }
 
-    // Push in reverse so the first child is popped first
+    //Push in reverse so the first child is popped first
     for (int i = n - 1; i >= 0; --i) 
     {
         pending.push(node->getChild(i));

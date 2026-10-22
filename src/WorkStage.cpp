@@ -68,6 +68,7 @@ WorkComponent* WorkStage::clone() const         //Prototype must double check
     return copy;
 }
 
+//A stage has no state of its own, so these are unsupported
 bool WorkStage::makeAvailable() { return false; }
 bool WorkStage::assignTo(Participant*) { return false; }
 bool WorkStage::start() { return false; }
@@ -77,6 +78,8 @@ bool WorkStage::reject() { return false; }
 bool WorkStage::cancel() { return false; }
 bool WorkStage::escalate() { return false; }
 
+
+//Undo support
 const WorkItemState* WorkStage::getState() const { return nullptr; }
 Participant* WorkStage::getAssignee() const { return nullptr; }
 void WorkStage::restoreState(const WorkItemState*, Participant*) {}
