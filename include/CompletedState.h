@@ -8,6 +8,7 @@ class CompletedState : public WorkItemState {
 public:
     static WorkItemState& instance();
 
+    bool isComplete() const override { return true; }
     std::string name() const override;
 
 private:

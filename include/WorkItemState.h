@@ -28,6 +28,7 @@ public:
     virtual bool reject(WorkItem& item) const;
     virtual bool cancel(WorkItem& item) const;
     virtual bool escalate(WorkItem& item) const;
+    virtual bool isComplete() const { return false; }
 
     virtual std::string name() const = 0;
     virtual bool canExecute() const;
