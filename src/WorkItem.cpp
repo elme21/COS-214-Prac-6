@@ -1,11 +1,12 @@
 #include "WorkItem.h"
+#include "WorkCoordinator.h"
 #include "WorkItemState.h"
 #include "CreatedState.h"
 
 #include <iostream>
 
 WorkItem::WorkItem()
-    : state(&CreatedState::instance()), assignee(nullptr), coordinator(nullptr) {}
+    : state(&CreatedState::instance()), assignee(nullptr) {}
 
 WorkItem::~WorkItem() {}
 
@@ -61,7 +62,23 @@ void WorkItem::restoreState(const WorkItemState* restoredState, Participant* res
     assignee = restoredAssignee;
 }
 
-void WorkItem::setCoordinator(WorkCoordinator* newCoordinator) { coordinator = newCoordinator; }
+void WorkItem::receive(const std::string&, Colleague*)
+{
+    if (coordinator == nullptr)
+    {
+        return;
+    }
+
+    if (coordinator->canBecomeAvailable(this))
+    {
+        makeAvailable();
+    }
+}
+
+bool WorkItem::isComplete() const
+{
+    return state->isComplete();
+}
 
 // --- Private, reachable only by WorkItemState ---
 
