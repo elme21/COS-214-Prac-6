@@ -5,9 +5,13 @@
 
 class FinalApproverHandler : public ApprovalHandler
 {
-    public:
-        void handleRequest();
-        bool isAuthorized();
+public:
+    explicit FinalApproverHandler(double limit) : ApprovalHandler(nullptr), limit(limit) {}
+
+    void handleRequest(ApprovalRequest& request) override;
+
+private:
+    double limit;
 };
 
 #endif

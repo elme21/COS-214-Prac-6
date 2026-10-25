@@ -1,22 +1,20 @@
 #include "RoleApproverHandler.h"
-#include <iostream>
-using namespace std;
+#include "ApprovalRequest.h"
+#include "WorkItem.h"
 
-void RoleApproverHandler::handleRequest()
+void RoleApproverHandler::handleRequest(ApprovalRequest& request)
 {
-    if (isAuthorized())
+    if (isAuthorized(request))
     {
-        cout << "RoleApproverHandler: handled request." << endl;
+        request.getItem()->approve();
     }
     else
     {
-        ApprovalHandler::handleRequest();
+        ApprovalHandler::handleRequest(request);   // escalate
     }
 }
 
-bool RoleApproverHandler::isAuthorized()
+bool RoleApproverHandler::isAuthorized(const ApprovalRequest& request) const
 {
-    std::srand(static_cast<unsigned>(std::time(nullptr)));
-    bool randomBool = std::rand() % 2;
-    return randomBool;
+    return request.getValue() <= limit;
 }
