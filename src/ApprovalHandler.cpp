@@ -1,15 +1,9 @@
 #include "ApprovalHandler.h"
-#include <iostream>
-using namespace std;
 
-void ApprovalHandler::handleRequest()
+void ApprovalHandler::handleRequest(ApprovalRequest& request)
 {
-    if (successor)
+    if (successor != nullptr)
     {
-        successor->handleRequest();
-    }
-    else
-    {
-        cout << "No successor to handle the request." << endl;
+        successor->handleRequest(request);
     }
 }
