@@ -1,3 +1,4 @@
+//Builder - defines the construction steps
 #ifndef DEFINITIONBUILDER_H
 #define DEFINITIONBUILDER_H
 

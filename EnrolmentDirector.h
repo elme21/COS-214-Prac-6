@@ -1,4 +1,4 @@
-
+//Director - Determines the construction sequence
 #ifndef ENROLMENTDIRECTOR_H
 #define ENROLMENTDIRECTOR_H
 

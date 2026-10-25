@@ -1,4 +1,4 @@
-
+//Product -	Represents the finished workflow
 #ifndef WORKFLOWDEFINITION_H
 #define WORKFLOWDEFINITION_H
 
