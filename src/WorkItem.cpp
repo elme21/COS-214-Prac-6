@@ -2,13 +2,24 @@
 #include "WorkCoordinator.h"
 #include "WorkItemState.h"
 #include "CreatedState.h"
+#include "DepthFirstIterator.h"
 
 #include <iostream>
 
 WorkItem::WorkItem()
     : state(&CreatedState::instance()), assignee(nullptr) {}
 
+WorkItem::WorkItem(const std::string& taskName, const std::string& taskId)
+    : state(&CreatedState::instance()), assignee(nullptr), name(taskName), id(taskId) {}
+
 WorkItem::~WorkItem() {}
+
+// --- Identity ---
+
+void WorkItem::setName(const std::string& taskName) { name = taskName; }
+void WorkItem::setId(const std::string& taskId) { id = taskId; }
+const std::string& WorkItem::getName() const { return name; }
+const std::string& WorkItem::getId() const { return id; }
 
 // --- Template Method ---
 
@@ -37,8 +48,11 @@ void WorkItem::remove(WorkComponent*) {}
 WorkComponent* WorkItem::getChild(int) { return nullptr; }
 
 WorkIterator* WorkItem::createIterator() {
-    // TODO leaf iterator - confirm with Member 1
-    return nullptr;
+    // Member 1's DepthFirstIterator handles a single leaf: it visits the root,
+    // and getChild() returns nullptr here, so nothing else is pushed.
+    // Same contract as WorkStage::createIterator(): the caller owns the
+    // iterator and must call reset() before the first hasNext()/next().
+    return new DepthFirstIterator(this);
 }
 
 // --- State delegation ---

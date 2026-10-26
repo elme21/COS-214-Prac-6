@@ -9,6 +9,10 @@ AutomatedTask::AutomatedTask() : connectorName(), connectors(nullptr) {}
 AutomatedTask::AutomatedTask(const std::string& name, ConnectorManager* manager)
     : connectorName(name), connectors(manager) {}
 
+AutomatedTask::AutomatedTask(const std::string& name, const std::string& id,
+                             const std::string& connector, ConnectorManager* manager)
+    : WorkItem(name, id), connectorName(connector), connectors(manager) {}
+
 void AutomatedTask::setConnectorName(const std::string& name) { connectorName = name; }
 void AutomatedTask::setConnectorManager(ConnectorManager* manager) { connectors = manager; }
 
