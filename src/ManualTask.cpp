@@ -4,6 +4,8 @@
 
 ManualTask::ManualTask() {}
 
+ManualTask::ManualTask(const std::string& name, const std::string& id) : WorkItem(name, id) {}
+
 WorkComponent* ManualTask::clone() const { return new ManualTask(*this); }
 
 bool ManualTask::perform() {

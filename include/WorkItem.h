@@ -4,6 +4,8 @@
 #include "WorkComponent.h"
 #include "Colleague.h"
 
+#include <string>
+
 class WorkItemState;
 class WorkCoordinator;
 
@@ -21,7 +23,19 @@ class WorkCoordinator;
 class WorkItem : public WorkComponent, public Colleague {
 public:
     WorkItem();
+    /**
+     * @param name Display name of the task, e.g. "Check Documents".
+     * @param id   Identifies the task within its definition. Clones keep the same ID,
+     *             so instance ID + task ID identify a task in a running instance.
+     */
+    explicit WorkItem(const std::string& name, const std::string& id = std::string());
     virtual ~WorkItem();
+
+    // Identity (copied by clone(), because clone() copy-constructs the task)
+    void setName(const std::string& name);
+    void setId(const std::string& id);
+    const std::string& getName() const;
+    const std::string& getId() const;
 
     // Template Method skeleton - subclasses cannot override it.
     void execute() override final;
@@ -66,6 +80,9 @@ private:
     const WorkItemState* state;
     // Current assignee. NON-OWNING: Participants are owned by the resource layer (Member 4).
     Participant* assignee;
+    // Display name and definition-level ID of the task.
+    std::string name;
+    std::string id;
 };
 
 #endif
