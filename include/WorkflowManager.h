@@ -11,8 +11,7 @@ class TaskRouter;
  * @class WorkflowManager
  * @brief Facade providing a simplified interface to the TIVIDY workflow system.
  *
- * Coordinates workflow creation, execution,
- * task completion and status retrieval.
+ * Coordinates workflow creation, execution, task completion and status retrieval.
  */
 class WorkflowManager {
 private:

@@ -1,4 +1,3 @@
-
 #include "include/WorkflowManager.h"
 
 #include <stdexcept>
@@ -11,13 +10,11 @@ WorkflowManager::WorkflowManager(DefinitionRegistry* registry,
     TaskRouter* router): registry(registry), router(router)
 {
     if (registry == nullptr) {
-        throw std::invalid_argument(
-            "DefinitionRegistry cannot be null");
+        throw std::invalid_argument("DefinitionRegistry cannot be null");
     }
 
     if (router == nullptr) {
-        throw std::invalid_argument(
-            "TaskRouter cannot be null");
+        throw std::invalid_argument("TaskRouter cannot be null");
     }
 }
 
@@ -33,6 +30,9 @@ std::string WorkflowManager::createInstance(
     // WAIT FOR: WorkflowInstance
     // Need to know how to construct an independent instance using the definition's cloned root.
 
+    (void)definitionName;
+    throw std::logic_error("createInstance: waiting for integration");
+
 }
 
 /**
@@ -43,6 +43,9 @@ void WorkflowManager::start(
 {
     // WAIT FOR: WorkflowInstance / State
     // Need to know how an instance is started and how its lifecycle state is updated.
+
+    (void)instanceId;
+    throw std::logic_error("start: waiting for integration");
 
 }
 
@@ -58,6 +61,9 @@ void WorkflowManager::complete(
     // WAIT FOR: ResourceCoordinator / TaskRouter
     // Need to know how completing a task unlocks
     // dependent tasks and triggers routing.
+    (void)itemId;
+    throw std::logic_error("complete: waiting for integration");
+
 }
 
 /**
@@ -69,5 +75,8 @@ std::string WorkflowManager::getStatus(
     // WAIT FOR: WorkflowInstance / State
     // Need to know how status is represented and retrieved from a workflow instance.
 
+
+    (void)instanceId;
+    throw std::logic_error("getStatus: waiting for integration");
 
 }
