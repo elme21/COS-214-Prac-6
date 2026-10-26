@@ -1,8 +1,0 @@
-PROJECT_NAME           = "TIVIDY - Observer and Strategy"
-OUTPUT_DIRECTORY       = docs/doxygen
-INPUT                  = observer strategy
-FILE_PATTERNS          = *.h *.cpp
-RECURSIVE              = YES
-JAVADOC_AUTOBRIEF      = YES
-EXTRACT_ALL            = YES
-GENERATE_LATEX         = NO
