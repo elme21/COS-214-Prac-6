@@ -1,7 +1,13 @@
 #include "DepthFirstIterator.h"
 #include "WorkComponent.h"
 
-DepthFirstIterator::DepthFirstIterator(WorkComponent* r): root(r), current(nullptr) { reset(); }
+DepthFirstIterator::DepthFirstIterator(WorkComponent* r): root(r), current(nullptr) {}
+
+
+bool DepthFirstIterator::hasNext() 
+{
+    return !pending.empty();
+}
 
 
 void DepthFirstIterator::reset() 
@@ -19,11 +25,6 @@ void DepthFirstIterator::reset()
 }
 
 
-bool DepthFirstIterator::hasNext() 
-{
-    return !pending.empty();
-}
-
 //Pre-order visiting: visit a node, then its children left to right.
 WorkComponent* DepthFirstIterator::next() 
 {
@@ -38,11 +39,11 @@ WorkComponent* DepthFirstIterator::next()
     int n = 0;
     while (node->getChild(n) != nullptr) 
     {
-        ++n;
+        n++;
     }
 
     //Push in reverse so the first child is popped first
-    for (int i = n - 1; i >= 0; --i) 
+    for (int i = n - 1; i >= 0; i--) 
     {
         pending.push(node->getChild(i));
     }

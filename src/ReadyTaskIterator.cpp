@@ -2,7 +2,35 @@
 #include "WorkComponent.h"
 #include "WorkItemState.h"  
 
-ReadyTaskIterator::ReadyTaskIterator(WorkComponent* r) : root(r), forward(nullptr), current(nullptr) { reset(); }
+ReadyTaskIterator::ReadyTaskIterator(WorkComponent* r) : root(r), forward(nullptr), current(nullptr) {}
+
+
+//Depth-first walk that stops at the next ready leaf
+void ReadyTaskIterator::advance() 
+{
+    forward = nullptr;
+    while (!pending.empty()) 
+    {
+        WorkComponent* node = pending.top();
+        pending.pop();
+
+        if (node->getChild(0) != nullptr) 
+        {
+            int n = 0;
+            while (node->getChild(n) != nullptr) 
+            {
+                n++;
+            }
+            for (int i = n - 1; i >= 0; i--) 
+            {
+                pending.push(node->getChild(i));
+            }
+        }else if (isReadyItem(node)) {
+            forward = node;
+            return;
+        }
+    }
+}
 
 
 bool ReadyTaskIterator::isReadyItem(WorkComponent* node) 
@@ -12,10 +40,7 @@ bool ReadyTaskIterator::isReadyItem(WorkComponent* node)
     {
         return false;   //Stages have no state
     }
-    //TODO: replace with the real check once WorkItemState's API is known,
-    //e.g. return state->isAvailable();
-    //Placeholder: treats every leaf that has a state as ready.
-    return true;
+    return state->isComplete();
 }
 
 
@@ -33,34 +58,6 @@ void ReadyTaskIterator::reset()
         pending.push(root);
     }
     advance();
-}
-
-
-//Depth-first walk that stops at the next ready leaf.
-void ReadyTaskIterator::advance() 
-{
-    forward = nullptr;
-    while (!pending.empty()) 
-    {
-        WorkComponent* node = pending.top();
-        pending.pop();
-
-        if (node->getChild(0) != nullptr) 
-        {
-            int n = 0;
-            while (node->getChild(n) != nullptr) 
-            {
-                ++n;
-            }
-            for (int i = n - 1; i >= 0; --i) 
-            {
-                pending.push(node->getChild(i));
-            }
-        } else if (isReadyItem(node)) {
-            forward = node;
-            return;
-        }
-    }
 }
 
 

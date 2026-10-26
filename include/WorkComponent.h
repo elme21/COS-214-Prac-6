@@ -18,7 +18,7 @@ class WorkComponent {
 public:
     virtual ~WorkComponent() {}
 
-    // --- Composite / Template Method / Decorator / Prototype ---
+    // --- Composite / Template Method / Decorator / Prototype / Iterator ---
     virtual void execute() = 0;
     virtual void add(WorkComponent* component) = 0;
     virtual void remove(WorkComponent* component) = 0;

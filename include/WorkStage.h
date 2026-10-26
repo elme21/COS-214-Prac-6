@@ -13,7 +13,7 @@ class WorkStage : public WorkComponent
         WorkStage() {}
         virtual ~WorkStage();
 
-        // Composite / Template Method / Prototype
+        // Composite / Template Method / Prototype / Iterator
         void execute() override;
         void add(WorkComponent* component) override;
         void remove(WorkComponent* component) override;

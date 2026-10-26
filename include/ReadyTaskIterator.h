@@ -8,12 +8,12 @@ class ReadyTaskIterator : public WorkIterator
 {
     private:
         WorkComponent* root;                    //Not owned
-        std::stack<WorkComponent*> pending;
+        std::stack<WorkComponent*> pending;     //Nodes still to visit
         WorkComponent* forward;                 //Next ready item
         WorkComponent* current;
 
         void advance();                                 //Finds the next ready item
-        static bool isReadyItem(WorkComponent* node);   //The one place that defines "ready"
+        static bool isReadyItem(WorkComponent* node);   //The place that defines "ready"
 
     public:
         explicit ReadyTaskIterator(WorkComponent* root);
