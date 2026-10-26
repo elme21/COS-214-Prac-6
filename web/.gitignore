@@ -1,0 +1,8 @@
+# Build output of web/build.ps1 (objects, the server executable, logs, scratch checks)
+build/
+
+# Any stray build output elsewhere under web/
+*.o
+*.obj
+*.exe
+*.log
