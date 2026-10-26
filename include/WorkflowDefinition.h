@@ -36,19 +36,19 @@ public:
     /**
      * @brief Returns the workflow definition name.
      */
-    const std::string& getName() const; //needed?
+    const std::string& getName() const;
 
     /**
      * @brief Returns the root of the workflow structure.
      */
-    std::shared_ptr<WorkComponent> getRoot() const;//needed?
+    std::shared_ptr<WorkComponent> getRoot() const;
 
     /**
      * @brief Creates an independent deep copy of the root.
      *
      * Uses the Prototype pattern implemented by WorkComponent.
      */
-    std::shared_ptr<WorkComponent> cloneRoot() const; //return type against UML??
+    std::shared_ptr<WorkComponent> cloneRoot() const; 
 };
 
 #endif

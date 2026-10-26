@@ -6,7 +6,11 @@
 #include "WorkflowDefinition.h"
 
 #include <memory>
+#include <map>
 #include <string>
+
+class WorkStage;
+class WorkItem;
 
 /**
  * @class CodeDefinitionBuilder
@@ -20,6 +24,11 @@ class CodeDefinitionBuilder : public DefinitionBuilder {
 private:
     /** @brief Stores the workflow definition being constructed. */
     std::shared_ptr<WorkflowDefinition> definition;
+
+    // Look up stages and tasks by their names during construction.
+    std::map<std::string, WorkStage*> stages;
+    std::map<std::string, WorkItem*> tasks;
+    std::string workflowName;
 
 public:
     /**

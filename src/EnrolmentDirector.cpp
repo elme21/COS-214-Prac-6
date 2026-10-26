@@ -1,6 +1,6 @@
 
-#include "EnrolmentDirector.h"
-#include "DefinitionBuilder.h"
+#include "../include/EnrolmentDirector.h"
+#include "../include/DefinitionBuilder.h"
 
 void EnrolmentDirector::construct(DefinitionBuilder& builder)
 {
@@ -29,18 +29,18 @@ void EnrolmentDirector::construct(DefinitionBuilder& builder)
     // dependencies
     builder.addDependency("SubmitApplication", "CheckDocuments");
 
-    //both verification tasks depend on document checking.
+    //both verification tasks depend on document checking
     builder.addDependency("CheckDocuments", "VerifyPersonalDetails");
     builder.addDependency("CheckDocuments", "VerifyResults");
 
-    //faculty assessment requires BOTH verifications.
+    //faculty assessment requires BOTH verifications
     builder.addDependency("VerifyPersonalDetails","FacultyChecksRequirements");
     builder.addDependency("VerifyResults","FacultyChecksRequirements");
 
-    //faculty assessment comes before the decision.
+    //faculty assessment comes before the decision
     builder.addDependency("FacultyChecksRequirements","ApplicationDecision");
 
-    //notification follows the decision.
+    //notification follows the decision
     builder.addDependency("ApplicationDecision", "NotifyApplicant");
 }
 

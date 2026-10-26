@@ -1,6 +1,6 @@
 
-#include "WorkflowDefinition.h"
-#include "include/WorkComponent.h"
+#include "../include/WorkflowDefinition.h"
+#include "../include/WorkComponent.h"
 
 #include <stdexcept>
 #include <utility>
