@@ -40,7 +40,7 @@ bool ReadyTaskIterator::isReadyItem(WorkComponent* node)
     {
         return false;   //Stages have no state
     }
-    return dynamic_cast<const AvailableState*>(state) != nullptr;   //NOTE: to be changed if isAvailable() is added to WorkItemState
+    return dynamic_cast<const AvailableState*>(state) != nullptr;   //NOTE: to be changed if isAvailable is added to WorkItemState
 }
 
 
