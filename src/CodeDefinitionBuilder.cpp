@@ -1,106 +1,128 @@
 #include "../include/CodeDefinitionBuilder.h"
 #include "../include/WorkStage.h"
+#include "../include/WorkItem.h"
 #include "../include/ManualTask.h"
 #include "../include/AutomatedTask.h"
 #include "../include/ApprovalTask.h"
+#include "../include/AuditDecorator.h"
 
 #include <stdexcept>
 #include <memory>
-#include <string>
+#include <iostream>
+#include <algorithm>
 
-CodeDefinitionBuilder::CodeDefinitionBuilder(const std::string& name): workflowName(name)
-{
+CodeDefinitionBuilder::CodeDefinitionBuilder(const std::string& n):workflowName(n)
+{}
+
+void CodeDefinitionBuilder::addStage(const std::string& n,const std::string& p){
+
+ if(stages.count(n)||tasks.count(n))
+    throw std::invalid_argument("Duplicate name: "+n);
+
+ if(p.empty()){
+    if(definition)
+        throw std::logic_error("Root already defined");
+
+    std::shared_ptr<WorkComponent> root(new WorkStage());
+    stages[n]=static_cast<WorkStage*>(root.get());
+    definition=std::make_shared<WorkflowDefinition>(workflowName,root);
+ }else{
+    auto it=stages.find(p);
+
+    if(it==stages.end())
+        throw std::invalid_argument("Unknown parent stage: "+p);
+
+     WorkStage* stage=new WorkStage();
+     it->second->add(stage);
+     stages[n]=stage;
+ }
 }
 
-void CodeDefinitionBuilder::addStage(const std::string& name, const std::string& parent)
-{
-    if (stages.count(name) != 0 || tasks.count(name) != 0) {
-        throw std::invalid_argument("Duplicate stage or task name: " + name);
-    }
+void CodeDefinitionBuilder::addTask(const std::string& n,const std::string& kind,const std::string& stage){
 
-    if (parent.empty()) {
-        if (definition) {
-            throw std::logic_error("Root stage already exists");
-        }
-        WorkStage* root = new WorkStage();
-        definition = std::make_shared<WorkflowDefinition>(workflowName, std::shared_ptr<WorkComponent>(root));
-        stages[name] = root;
-        return;
-    }
+ if(stages.count(n)||tasks.count(n))
+    throw std::invalid_argument("Duplicate name: "+n);
 
-    auto it = stages.find(parent);
-    if (it == stages.end()) {
-        throw std::invalid_argument("Unknown parent stage: " + parent);
-    }
+ auto it=stages.find(stage);
 
-    WorkStage* child = new WorkStage();
-    it->second->add(child); 
-    stages[name] = child;
+ if(it==stages.end())
+    throw std::invalid_argument("Unknown stage: "+stage);
+
+ WorkItem* item=nullptr;
+
+ if(kind=="manual")
+    item=new ManualTask(n,n);
+    else if(kind=="automated")
+    item=new AutomatedTask(n,n);
+        else if(kind=="approval")
+        item=new ApprovalTask(n,n);
+            else
+             throw std::invalid_argument("Unknown task kind: "+kind);
+
+    it->second->add(item);
+    tasks[n]=item;
+    taskComponents[n]=item;
+    parents[n]=it->second;
 }
 
-void CodeDefinitionBuilder::addTask(
-    const std::string& name,
-    const std::string& kind,
-    const std::string& stage)
-{
-    if (stages.count(name) != 0 || tasks.count(name) != 0) {
-        throw std::invalid_argument("Duplicate stage or task name: " + name);
-    }
+void CodeDefinitionBuilder::setAssignmentStrategy(const std::string& n,AssignmentStrategy* s){
 
-    auto it = stages.find(stage);
-    if (it == stages.end()) {
-        throw std::invalid_argument("Unknown stage: " + stage);
-    }
+ if(!tasks.count(n)||!s)
+    throw std::invalid_argument("Invalid task/strategy: "+n);
 
-    WorkItem* item = nullptr;
-    if (kind == "manual") {
-        item = new ManualTask();
-    } else if (kind == "automated") {
-        item = new AutomatedTask();
-    } else if (kind == "approval") {
-        item = new ApprovalTask();
-    } else {
-        throw std::invalid_argument("Unknown task kind: " + kind);
-    }
-
-    it->second->add(item); 
-    tasks[name] = item;
+ definition->setStrategy(n,s);
 }
 
-void CodeDefinitionBuilder::setAssignmentStrategy(const std::string& task,AssignmentStrategy* strategy)
-{
-    // WAIT FOR: agreed task-to-strategy storage and ownership.
-    (void)task; (void)strategy;
-    throw std::logic_error("setAssignmentStrategy not integrated yet");
+void CodeDefinitionBuilder::addDecorator(const std::string& n,const std::string& kind){
+
+ auto it=taskComponents.find(n);
+
+ if(it==taskComponents.end())
+    throw std::invalid_argument("Unknown task: "+n);
+
+ WorkComponent* old=it->second;
+
+ // Construct first: no ownership is transferred until a constructor succeeds.
+ WorkComponent* replacement=nullptr;
+
+ if(kind=="audit")
+    replacement=new AuditDecorator(old,n,[](const std::string& msg){std::cout<<msg<<'\n';});
+ else
+    throw std::invalid_argument("Unknown decorator: "+kind);
+
+ // WorkStage::remove does not delete the child; decorator now owns old.
+ parents.at(n)->remove(old);
+ parents.at(n)->add(replacement);
+ it->second=replacement;
 }
 
-void CodeDefinitionBuilder::addDecorator(const std::string& task,const std::string& decorator)
-{
-    //WAIT FOR: decorator factory and replacement/ownership contract.
-    (void)task; (void)decorator; 
-    throw std::logic_error("addDecorator not integrated yet");
+void CodeDefinitionBuilder::addDependency(const std::string& from,const std::string& to){
+
+ if(!tasks.count(from)||!tasks.count(to)||from==to)
+    throw std::invalid_argument("Invalid dependency: "+from+" -> "+to);
+
+ definition->addDependency(from,to);
 }
 
-void CodeDefinitionBuilder::addDependency(const std::string& from,const std::string& to)
-{
-    //WAIT FOR: per-instance dependency storage (avoid shared mutable task pointers).
-    (void)from; (void)to;
-    throw std::logic_error("addDependency not integrated yet");
+void CodeDefinitionBuilder::setApprovalChain(const std::string& n,ApprovalHandler* handler){
+
+ auto it=tasks.find(n);
+
+ if(it==tasks.end())
+    throw std::invalid_argument("Unknown task: "+n);
+
+ ApprovalTask* approval=dynamic_cast<ApprovalTask*>(it->second);
+
+ if(!approval)
+    throw std::invalid_argument("Not an approval task: "+n);
+
+ approval->setFirstHandler(handler);
 }
 
-void CodeDefinitionBuilder::setApprovalChain(const std::string& task, ApprovalHandler* handler)
-{
-    //WAIT FOR: approval handler lifetime/ownership agreement.
-    (void)task; (void)handler;
-    throw std::logic_error("setApprovalChain not integrated yet");
-}
+std::shared_ptr<WorkflowDefinition> CodeDefinitionBuilder::getDefinition(){
 
-std::shared_ptr<WorkflowDefinition>CodeDefinitionBuilder::getDefinition()
-{
-    if (!definition) {
-        throw std::logic_error("No root stage has been added");
-    }
-    return definition;
-}
+ if(!definition)
+    throw std::logic_error("No root stage");
 
-//Please note that this still needs a lot of work.
+ return definition;
+}

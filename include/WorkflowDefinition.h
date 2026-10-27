@@ -5,10 +5,13 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <map>
+#include <utility>
 
 class WorkComponent;
 class AssignmentStrategy;
 class Dependency;
+class ApprovalHandler;
 
 /**
  * @brief Product of the Builder pattern.
@@ -21,8 +24,9 @@ class WorkflowDefinition {
 private:
     std::string name;
     std::shared_ptr<WorkComponent> root;
-    std::vector<std::shared_ptr<AssignmentStrategy>> strategies;
-    std::vector<std::shared_ptr<Dependency>> dependencies;
+    // Store task configuration by name so it can be applied to cloned instances.
+    std::map<std::string, AssignmentStrategy*> strategies;
+    std::vector<std::pair<std::string, std::string>> dependencies;
 
 public:
    /**
@@ -48,7 +52,32 @@ public:
      *
      * Uses the Prototype pattern implemented by WorkComponent.
      */
-    std::shared_ptr<WorkComponent> cloneRoot() const; 
+    std::shared_ptr<WorkComponent> cloneRoot() const;
+
+    /**
+     * @brief Records a prerequisite and its dependent task.
+     */
+    void addDependency(const std::string& prerequisite, const std::string& dependent);
+
+    /**
+     * @brief Returns the dependency specifications for this definition.
+     */
+    const std::vector<std::pair<std::string, std::string>>& getDependencies() const;
+
+    /**
+     * @brief Associates a task with an assignment strategy.
+     */
+    void setStrategy(const std::string& task, AssignmentStrategy* strategy);
+
+    /**
+     * @brief Returns the configured assignment strategy for a task.
+     */
+    AssignmentStrategy* getStrategy(const std::string& task) const;
+
+    /**
+     * @brief Records an approval handler association (non-owning).
+     */
+    void keepApprovalHandler(ApprovalHandler* handler); 
 };
 
 #endif

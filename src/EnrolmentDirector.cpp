@@ -1,4 +1,3 @@
-
 #include "../include/EnrolmentDirector.h"
 #include "../include/DefinitionBuilder.h"
 
@@ -43,5 +42,3 @@ void EnrolmentDirector::construct(DefinitionBuilder& builder)
     //notification follows the decision
     builder.addDependency("ApplicationDecision", "NotifyApplicant");
 }
-
-//Please note this still needs a lot of work. 
