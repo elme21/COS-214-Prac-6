@@ -1,3 +1,7 @@
+/**
+ * @file CancelCommand.cpp
+ * @brief Implementation of CancelCommand.
+ */
 #include "CancelCommand.h"
 #include "WorkComponent.h"
 
