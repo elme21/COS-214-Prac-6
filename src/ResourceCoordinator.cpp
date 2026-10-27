@@ -44,12 +44,20 @@ bool ResourceCoordinator::requestResource(WorkItem* item, Resource* resource)
         return false;
     }
 
+    std::vector<WorkItem*>& holders = allocations[resource];
+
+    if (std::find(holders.begin(), holders.end(), item) != holders.end())
+    {
+        return true;
+    }
+
     if (!resource->isFree())
     {
         return false;
     }
 
-    allocations[resource].push_back(item);
+    resource->take();
+    holders.push_back(item);
     return true;
 }
 
@@ -62,8 +70,13 @@ void ResourceCoordinator::release(WorkItem* item)
 
     for (auto& pair : allocations)
     {
-        std::vector<WorkItem*>& items = pair.second;
-        items.erase(std::remove(items.begin(), items.end(), item), items.end());
+        std::vector<WorkItem*>& holders = pair.second;
+        std::vector<WorkItem*>::iterator it = std::find(holders.begin(), holders.end(), item);
+        if (it != holders.end())
+        {
+            holders.erase(it);
+            pair.first->giveBack(); // restore the place
+        }
     }
 }
 

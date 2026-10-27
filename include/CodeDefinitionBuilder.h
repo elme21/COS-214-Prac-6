@@ -11,6 +11,7 @@
 
 class WorkStage;
 class WorkItem;
+class WorkComponent;
 
 /**
  * @class CodeDefinitionBuilder
@@ -29,6 +30,10 @@ private:
     std::map<std::string, WorkStage*> stages;
     std::map<std::string, WorkItem*> tasks;
     std::string workflowName;
+
+    // Keep track of decorated components and their parent stages.
+    std::map<std::string, WorkComponent*> taskComponents;
+    std::map<std::string, WorkStage*> parents;
 
 public:
     /**

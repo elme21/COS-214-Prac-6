@@ -12,8 +12,9 @@ private:
     stack<unique_ptr<WorkflowCommand>> history;
 
 public:
-    void run(unique_ptr<WorkflowCommand> command);
+    bool run(unique_ptr<WorkflowCommand> command);
     void undo();
+    const stack<unique_ptr<WorkflowCommand>>& getHistory() const;
 };
 
 #endif

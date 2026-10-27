@@ -7,6 +7,7 @@
 class ManualTask : public WorkItem {
 public:
     ManualTask();
+    explicit ManualTask(const std::string& name, const std::string& id = std::string());
 
     // Prototype - coordinate with Member 3
     WorkComponent* clone() const override;

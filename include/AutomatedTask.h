@@ -12,6 +12,10 @@ class AutomatedTask : public WorkItem {
 public:
     AutomatedTask();
     AutomatedTask(const std::string& connectorName, ConnectorManager* connectors);
+    explicit AutomatedTask(const std::string& name,
+                           const std::string& id = std::string(),
+                           const std::string& connectorName = std::string(),
+                           ConnectorManager* connectors = nullptr);
 
     void setConnectorName(const std::string& connectorName);
     void setConnectorManager(ConnectorManager* connectors);
