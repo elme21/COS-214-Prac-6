@@ -36,3 +36,4 @@ public:
      */
     void undo() override;
 };
+#endif
