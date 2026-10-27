@@ -24,7 +24,7 @@ void Colleague::changed(const std::string& event)
     }
 }
 
-void Colleague::receive(const std::string& event, Colleague* source)
+void Colleague::receive(const std::string&, Colleague*)
 {
-    // Default implementation does nothing and gets overridden
+    // Default: do nothing. Colleagues override this if they need to react.
 }

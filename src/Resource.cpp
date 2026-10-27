@@ -1,6 +1,7 @@
 #include "Resource.h"
 
-Resource::Resource(int capacity, WorkCoordinator* coordinator) : Colleague(coordinator), capacity(capacity)
+Resource::Resource(const std::string& name, int capacity, WorkCoordinator* coordinator)
+    : Colleague(coordinator), name(name), capacity(capacity), available(capacity)
 {
 
 }
@@ -10,7 +11,38 @@ Resource::~Resource()
 
 }
 
-bool Resource::isFree() const
+const std::string& Resource::getName() const
 {
-    return capacity > 0; //needs changing for an upperlimit but for now this will surve as a placeholder
+    return name;
+}
+
+int Resource::getCapacity() const
+{
+    return capacity;
+}
+
+int Resource::getAvailable() const
+{ 
+    return available; 
+}
+
+bool Resource::isFree() const
+{ 
+    return available > 0; 
+}
+
+void Resource::take()
+{
+    if (available > 0)
+    {
+        --available;
+    }
+}
+
+void Resource::giveBack()
+{
+    if (available < capacity)
+    {
+        ++available;
+    }
 }

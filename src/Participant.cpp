@@ -1,8 +1,14 @@
 #include "Participant.h"
 
-Participant::Participant(WorkCoordinator* coordinator) : Colleague(coordinator), assignedCount(0)
+Participant::Participant(const std::string& name, WorkCoordinator* coordinator)
+    : Colleague(coordinator), name(name), assignedCount(0)
 {
 
+}
+
+const std::string& Participant::getName() const
+{
+    return name;
 }
 
 Participant::~Participant()
