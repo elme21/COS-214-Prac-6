@@ -1,52 +1,36 @@
 #ifndef DEFINITIONREGISTRY_H
 #define DEFINITIONREGISTRY_H
 
-#include <string>
-#include <vector>
+#include <map>
 #include <memory>
+#include <string>
+#include "WorkComponent.h"
 
 class WorkflowDefinition;
-class WorkComponent;
 
-/**
- * @brief Registry for reusable workflow definitions.
- *
- * Stores completed WorkflowDefinition objects and
- * prototype WorkComponents for future cloning.
- */
+// Prototype manager. Owns finished workflow definitions (by name) and prototypical work components (by kind)
+//Instances are never built from scratch: callers clone the definition's root or a task prototype
 class DefinitionRegistry {
-private:
-    std::vector<WorkComponent*> prototypeStore;
-
-    std::vector<std::shared_ptr<WorkflowDefinition>> definitions;
-
 public:
-    /**
-     * @brief Registers a completed workflow definition.
-     */
-    void registerDefinition(
-        std::shared_ptr<WorkflowDefinition> definition);
+    DefinitionRegistry();
+    ~DefinitionRegistry();
+    DefinitionRegistry(const DefinitionRegistry&) = delete;
+    DefinitionRegistry& operator=(const DefinitionRegistry&) = delete;
 
-    /**
-     * @brief Retrieves a workflow definition by name.
-     */
-    std::shared_ptr<WorkflowDefinition>
-        get(const std::string& name) const;
+    // Takes ownership even when it returns false (name already registered).
+    bool registerDefinition(WorkflowDefinition* definition);
+    // nullptr if unknown. The caller clones via definition->cloneRoot().
+    const WorkflowDefinition* get(const std::string& name) const;
 
-    /**
-     * @brief Adds a prototype component.
-     */
-    void addProto(WorkComponent* w);
+    // Takes ownership even when it returns false (kind already registered).
+    bool addProto(const std::string& kind, WorkComponent* prototype);
+    bool removeProto(const std::string& kind);
+    // A fresh deep copy owned by the caller, or nullptr if the kind is unknown.
+    WorkComponent* cloneProto(const std::string& kind) const;
 
-    /**
-     * @brief Removes a prototype component.
-     */
-    void removeProto(WorkComponent* w);
-
-    /**
-     * @brief Retrieves a prototype component.
-     */
-    WorkComponent* getProto() const;
+private:
+    std::map<std::string, std::unique_ptr<WorkflowDefinition> > definitions;
+    std::map<std::string, std::unique_ptr<WorkComponent> > prototypes;
 };
 
 #endif

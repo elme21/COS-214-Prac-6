@@ -1,46 +1,41 @@
 #include "DefinitionRegistry.h"
 #include "WorkflowDefinition.h"
-#include "WorkComponent.h"
-#include <algorithm>
-#include <stdexcept>
+#include <utility>
 
-void DefinitionRegistry::registerDefinition(std::shared_ptr<WorkflowDefinition> d){
+DefinitionRegistry::DefinitionRegistry() {}
+DefinitionRegistry::~DefinitionRegistry() {}
 
- if(!d)
-    throw std::invalid_argument("Null definition");
-
- for(auto& existing:definitions){
-    if(existing->getName()==d->getName()){
-        existing=d;
-        return;
+bool DefinitionRegistry::registerDefinition(WorkflowDefinition* definition) {
+    std::unique_ptr<WorkflowDefinition> owned(definition);
+    if (!owned || definitions.count(owned->getName()) > 0) {
+        return false;
     }
- }
-
- definitions.push_back(std::move(d));
+    const std::string name = owned->getName();
+    definitions[name] = std::move(owned);
+    return true;
 }
 
-std::shared_ptr<WorkflowDefinition> DefinitionRegistry::get(const std::string& name)const{
-
- for(const auto& d:definitions){
-    if(d->getName()==name)
-        return d;
- }
-
- return nullptr;
+const WorkflowDefinition* DefinitionRegistry::get(const std::string& name) const {
+    std::map<std::string, std::unique_ptr<WorkflowDefinition> >::const_iterator it =
+        definitions.find(name);
+    return it == definitions.end() ? nullptr : it->second.get();
 }
 
-void DefinitionRegistry::addProto(WorkComponent* p){
-
- if(p)
-    prototypeStore.push_back(p);
+bool DefinitionRegistry::addProto(const std::string& kind, WorkComponent* prototype) {
+    std::unique_ptr<WorkComponent> owned(prototype);
+    if (!owned || prototypes.count(kind) > 0) {
+        return false;
+    }
+    prototypes[kind] = std::move(owned);
+    return true;
 }
 
-void DefinitionRegistry::removeProto(WorkComponent* p){
-
- prototypeStore.erase(std::remove(prototypeStore.begin(),prototypeStore.end(),p),prototypeStore.end());
+bool DefinitionRegistry::removeProto(const std::string& kind) {
+    return prototypes.erase(kind) > 0;
 }
 
-WorkComponent* DefinitionRegistry::getProto()const{
-
- return prototypeStore.empty()?nullptr:prototypeStore.back();
+WorkComponent* DefinitionRegistry::cloneProto(const std::string& kind) const {
+    std::map<std::string, std::unique_ptr<WorkComponent> >::const_iterator it =
+        prototypes.find(kind);
+    return it == prototypes.end() ? nullptr : it->second->clone();
 }
