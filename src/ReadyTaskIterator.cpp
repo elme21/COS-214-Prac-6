@@ -1,8 +1,8 @@
 #include "ReadyTaskIterator.h"
 #include "WorkComponent.h"
-#include "WorkItemState.h"  
+#include "AvailableState.h"
 
-ReadyTaskIterator::ReadyTaskIterator(WorkComponent* r) : root(r), forward(nullptr), current(nullptr) {}
+ReadyTaskIterator::ReadyTaskIterator(WorkComponent* r) : root(r), forward(nullptr), current(nullptr) { reset(); }
 
 
 //Depth-first walk that stops at the next ready leaf
@@ -40,7 +40,7 @@ bool ReadyTaskIterator::isReadyItem(WorkComponent* node)
     {
         return false;   //Stages have no state
     }
-    return state->isComplete();
+    return dynamic_cast<const AvailableState*>(state) != nullptr;   //NOTE: to be changed if isAvailable() is added to WorkItemState
 }
 
 

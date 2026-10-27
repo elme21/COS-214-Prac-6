@@ -4,6 +4,10 @@
 #include <stack>
 #include "WorkIterator.h"
 
+/**
+ * @brief Concrete class of WorkIterator, performs normal DFS
+ */
+
 class DepthFirstIterator : public WorkIterator 
 {
     private:

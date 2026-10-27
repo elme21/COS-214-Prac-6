@@ -1,7 +1,7 @@
 #include "DepthFirstIterator.h"
 #include "WorkComponent.h"
 
-DepthFirstIterator::DepthFirstIterator(WorkComponent* r): root(r), current(nullptr) {}
+DepthFirstIterator::DepthFirstIterator(WorkComponent* r): root(r), current(nullptr) { reset(); }
 
 
 bool DepthFirstIterator::hasNext() 

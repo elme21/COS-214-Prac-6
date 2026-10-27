@@ -1,6 +1,8 @@
 #include "WorkStage.h"
 #include "DepthFirstIterator.h"
 
+#include <cstddef>
+
 WorkStage::~WorkStage() 
 {
     for (size_t i = 0; i < children.size(); ++i) 
@@ -21,7 +23,8 @@ void WorkStage::execute()
 
 void WorkStage::add(WorkComponent* component) 
 {
-    if (component != nullptr) {
+    if (component != nullptr) 
+    {
         children.push_back(component);
     }
 }
@@ -52,7 +55,7 @@ WorkComponent* WorkStage::getChild(int index)
 }
 
 
-WorkIterator* WorkStage::createIterator() 
+WorkIterator* WorkStage::createIterator()      
 {
     return new DepthFirstIterator(this);
 }

@@ -3,6 +3,10 @@
 
 class WorkComponent;
 
+/**
+ * Abstract parent class of Iterator pattern, only interacts
+ * with Composite pattern, has no base implementation
+ */
 class WorkIterator
 {
     public:

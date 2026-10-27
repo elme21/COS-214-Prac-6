@@ -13,7 +13,7 @@ class ReadyTaskIterator : public WorkIterator
         WorkComponent* current;
 
         void advance();                                 //Finds the next ready item
-        static bool isReadyItem(WorkComponent* node);   //The place that defines "ready"
+        static bool isReadyItem(WorkComponent* node);   //Defines what it means to be "ready"
 
     public:
         explicit ReadyTaskIterator(WorkComponent* root);
