@@ -1,25 +1,22 @@
 #include "AssignCommand.h"
-#include "WorkComponent.h" // Assumed to have getAssignee() and setAssignee()
-#include <iostream>
+#include "WorkComponent.h"
 
-AssignCommand::AssignCommand(WorkComponent* workComponent, const string& participant)
-    : item(workComponent), newParticipant(participant), previousParticipant("") {}
+AssignCommand::AssignCommand(WorkComponent* workComponent, Participant* participant)
+    : item(workComponent), newParticipant(participant), previousParticipant(nullptr), previousState(nullptr) {}
 
 bool AssignCommand::execute() {
     if (!item) return false;
     
-    // Store previous participant for undo
-    previousParticipant = item->getAssignee(); 
-    item->setAssignee(newParticipant);
+    //Use const WorkItemState* and getAssignee()
+    previousState = item->getState();
+    previousParticipant = item->getAssignee();
     
-    cout << "[AssignCommand] Assigned component to " << newParticipant << "\n";
-    return true;
+    return item->assignTo(newParticipant);
 }
 
 void AssignCommand::undo() {
-    if (!item) return;
-    
-    // Restore previous participant silently
-    item->setAssignee(previousParticipant);
-    cout << "[AssignCommand] Reverted assignment back to " << previousParticipant << "\n";
+    if (item) {
+        //Use combined restoreState signature
+        item->restoreState(previousState, previousParticipant);
+    }
 }
