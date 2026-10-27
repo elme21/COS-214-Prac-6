@@ -25,7 +25,7 @@ private:
     DefinitionRegistry* registry;
     TaskRouter* router;
 
-    // Keep the running data for each independent workflow instance.
+    //Keep the running data for each independent workflow instance
     struct Runtime {
         std::shared_ptr<WorkflowInstance> instance;
         std::shared_ptr<WorkflowDefinition> definition;
@@ -47,9 +47,7 @@ public:
      * @param registry Registry containing workflow definitions.
      * @param router Task assignment and routing service.
      */
-    WorkflowManager(
-        DefinitionRegistry* registry,
-        TaskRouter* router);
+    WorkflowManager(DefinitionRegistry* registry, TaskRouter* router);
 
     /**
      * @brief Creates a running workflow instance.

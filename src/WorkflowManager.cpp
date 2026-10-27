@@ -17,12 +17,13 @@
 
 WorkflowManager::WorkflowManager(DefinitionRegistry* r,TaskRouter* t):registry(r),router(t)
 {
- if(!r||!t)
+ if(!r || !t)
     throw std::invalid_argument("WorkflowManager requires registry and router");
 }
 
-std::string WorkflowManager::createInstance(const std::string& name){
-
+std::string WorkflowManager::createInstance(const std::string& name)
+{
+ //find & clone workflow
  auto def=registry->get(name);
 
  if(!def)
@@ -30,39 +31,42 @@ std::string WorkflowManager::createInstance(const std::string& name){
 
  auto root=def->cloneRoot();
 
+ //setup runtime holding workflow instance and subsystems it needs
  Runtime run;
  run.instance=std::make_shared<WorkflowInstance>(root,"Created");
  run.definition=def;
  run.mediator=std::make_shared<ResourceCoordinator>();
  run.commands=std::make_shared<CommandProcessor>();
 
- std::function<void(WorkComponent*)> walk=[&](WorkComponent* node){
+    //find every task inside workflow (composite tree)
+    std::function<void(WorkComponent*)> walk=[&](WorkComponent* node){
 
-    if(auto* item=dynamic_cast<WorkItem*>(node)){
+        if(auto* item=dynamic_cast<WorkItem*>(node)){
 
-        const std::string id=item->getId().empty()?item->getName():item->getId();
+         const std::string id=item->getId().empty()?item->getName():item->getId();
 
-        if(id.empty()||run.components.count(id))
+         if(id.empty()||run.components.count(id))
             throw std::logic_error("Duplicate/empty task ID: "+id);
 
-        run.components[id]=node;
-        run.items[id]=item;
-        run.mediator->registerColleague(item);
-        return;
-    }
+          run.components[id]=node;
+         run.items[id]=item;
+         run.mediator->registerColleague(item);
+         return;
+        }
 
-    for(int i=0;;++i){
-        WorkComponent* child=node->getChild(i);
+        for(int i=0;;++i){
+            WorkComponent* child=node->getChild(i);
 
-        if(!child)
+         if(!child)
             break;
 
-        walk(child);
-    }
- };
+         walk(child);
+        }
+    };
 
  walk(root.get());
 
+ //register dependaancies with mediator
  for(const auto& edge:def->getDependencies()){
 
     auto a=run.items.find(edge.first);
@@ -71,16 +75,17 @@ std::string WorkflowManager::createInstance(const std::string& name){
     if(a==run.items.end()||b==run.items.end())
         throw std::logic_error("Dependency references task not accessible after cloning: "+edge.first+" -> "+edge.second);
 
-    run.mediator->addDependency(b->second,a->second);
- }
+        run.mediator->addDependency(b->second,a->second); 
+    }
 
+ //Save the instance
  std::string id="instance-"+std::to_string(nextId++);
  instances.emplace(id,std::move(run));
 
  return id;
 }
 
-void WorkflowManager::start(const std::string& id){
+void WorkflowManager::start(const std::string& id){ //start if prerequisites met and delegates to strategy
 
  auto it=instances.find(id);
 
@@ -92,20 +97,20 @@ void WorkflowManager::start(const std::string& id){
  if(run.instance->getStatus()!="Created")
     throw std::logic_error("Instance already started");
 
- for(auto& pair:run.items){
+  for(auto& pair:run.items){
 
     WorkItem* item=pair.second;
 
-    if(run.mediator->canBecomeAvailable(item)){
+    if(run.mediator->canBecomeAvailable(item)){  //prerequisites met
 
         item->makeAvailable();
 
-        if(auto* s=run.definition->getStrategy(pair.first)){
+        if(auto* s=run.definition->getStrategy(pair.first)){ //assignment strategy exists?
             router->setStrategy(s);
             router->route(item);
         }
     }
- }
+  }
 
  run.instance->setStatus("Running");
 }
@@ -126,7 +131,7 @@ void WorkflowManager::complete(const std::string& instanceId,const std::string& 
 }
 
 void WorkflowManager::completeInInstance(const std::string& id,const std::string& taskId){
-
+//validate request
  auto it=instances.find(id);
 
  if(it==instances.end())
@@ -137,6 +142,7 @@ void WorkflowManager::completeInInstance(const std::string& id,const std::string
  if(run.instance->getStatus()!="Running")
     throw std::logic_error("Instance is not running");
 
+//find task
  auto found=run.items.find(taskId);
 
  if(found==run.items.end())
@@ -144,15 +150,17 @@ void WorkflowManager::completeInInstance(const std::string& id,const std::string
 
  WorkItem* item=found->second;
 
+ //checks with mediator and state 
  if(!run.mediator->canBecomeAvailable(item))
     throw std::logic_error("Task prerequisites not met: "+taskId);
 
- // State transitions must be respected: only an InProgress item may complete.
  if(!item->getState()||item->getState()->name()!="InProgress")
     throw std::logic_error("Task must be InProgress before completion: "+taskId);
 
+//use Command to encapsulate and complete task.
  run.commands->run(std::unique_ptr<WorkflowCommand>(new CompleteCommand(item)));
 
+ //notify mediator and check for next tasks to make available
  if(!item->isComplete())
     throw std::logic_error("Completion was refused: "+taskId);
 
