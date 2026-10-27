@@ -1,3 +1,7 @@
+/**
+ * @file CommandProcessor.cpp
+ * @brief Implementation of the CommandProcessor class.
+ */
 #include "CommandProcessor.h"
 
 bool CommandProcessor::run(unique_ptr<WorkflowCommand> command) {
