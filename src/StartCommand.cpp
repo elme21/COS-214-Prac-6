@@ -1,3 +1,7 @@
+/**
+ * @file StartCommand.cpp
+ * @brief Implementation of StartCommand.
+ */
 #include "StartCommand.h"
 #include "WorkComponent.h"
 
