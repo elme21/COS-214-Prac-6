@@ -13,6 +13,8 @@ public:
     WorkComponentDecorator& operator=(const WorkComponentDecorator&) = delete;
     virtual ~WorkComponentDecorator();
 
+    WorkComponent* getWrappedComponent() const { return wrapped.get(); }
+
     void execute() override;
     void add(WorkComponent* child) override;
     void remove(WorkComponent* child) override;

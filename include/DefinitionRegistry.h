@@ -1,3 +1,4 @@
+
 #ifndef DEFINITIONREGISTRY_H
 #define DEFINITIONREGISTRY_H
 
@@ -8,24 +9,48 @@
 
 class WorkflowDefinition;
 
-// Prototype manager. Owns finished workflow definitions (by name) and prototypical work components (by kind)
-//Instances are never built from scratch: callers clone the definition's root or a task prototype
+/// @brief Manages workflow definitions and prototype work components.
+/// @details Owns registered definitions and prototypes. Callers create
+/// independent instances by cloning a definition's root or a prototype.
 class DefinitionRegistry {
 public:
+    /// @brief Constructs a definition registry.
     DefinitionRegistry();
+
+    /// @brief Destroys the registry and its owned objects.
     ~DefinitionRegistry();
+
     DefinitionRegistry(const DefinitionRegistry&) = delete;
     DefinitionRegistry& operator=(const DefinitionRegistry&) = delete;
 
-    // Takes ownership even when it returns false (name already registered).
+    /// @brief Registers a workflow definition by name.
+    /// @param definition Pointer to the definition being registered.
+    /// @return True if registered, false if the name already exists.
+    /// @note The registry takes ownership even if registration fails.
     bool registerDefinition(WorkflowDefinition* definition);
-    // nullptr if unknown. The caller clones via definition->cloneRoot().
+
+    /// @brief Retrieves a registered workflow definition.
+    /// @param name Name of the workflow definition.
+    /// @return Pointer to the definition, or nullptr if not found.
+    /// @note Callers can create independent instances using cloneRoot().
     const WorkflowDefinition* get(const std::string& name) const;
 
-    // Takes ownership even when it returns false (kind already registered).
+    /// @brief Registers a prototype work component by kind.
+    /// @param kind Identifier for the prototype.
+    /// @param prototype Pointer to the prototype being registered.
+    /// @return True if registered, false if the kind already exists.
+    /// @note The registry takes ownership even if registration fails.
     bool addProto(const std::string& kind, WorkComponent* prototype);
+
+    /// @brief Removes a registered prototype.
+    /// @param kind Identifier of the prototype to remove.
+    /// @return True if removed, false if the kind was not found.
     bool removeProto(const std::string& kind);
-    // A fresh deep copy owned by the caller, or nullptr if the kind is unknown.
+
+    /// @brief Creates a deep copy of a registered prototype.
+    /// @param kind Identifier of the prototype to clone.
+    /// @return Pointer to a new copy, or nullptr if not found.
+    /// @note The caller owns the returned copy.
     WorkComponent* cloneProto(const std::string& kind) const;
 
 private:
