@@ -1,3 +1,7 @@
+/**
+ * @file WorkComponentDecorator.cpp
+ * @brief Forwarding implementation of the base decorator.
+ */
 #include "WorkComponentDecorator.h"
 #include <stdexcept>
 
