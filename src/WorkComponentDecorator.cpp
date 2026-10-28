@@ -13,6 +13,8 @@ WorkComponentDecorator::WorkComponentDecorator(const WorkComponentDecorator& oth
 
 WorkComponentDecorator::~WorkComponentDecorator() {}
 
+WorkComponent* WorkComponentDecorator::getWrappedComponent() const{ return wrapped.get();}
+
 void WorkComponentDecorator::execute() { wrapped->execute(); }
 void WorkComponentDecorator::add(WorkComponent* child) { wrapped->add(child); }
 void WorkComponentDecorator::remove(WorkComponent* child) { wrapped->remove(child); }
