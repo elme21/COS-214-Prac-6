@@ -1,2 +1,19 @@
+# Visual Paradigm backups and lock files
 *.bak_*
 *.lck
+
+# C++ build output
+*.o
+*.obj
+*.exe
+*.out
+build/
+
+# Doxygen output (default folders when run from the repo root)
+/html/
+/latex/
+
+# OS clutter
+Thumbs.db
+desktop.ini
+.DS_Store

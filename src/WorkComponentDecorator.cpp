@@ -1,3 +1,7 @@
+/**
+ * @file WorkComponentDecorator.cpp
+ * @brief Forwarding implementation of the base decorator.
+ */
 #include "WorkComponentDecorator.h"
 #include <stdexcept>
 
@@ -13,6 +17,8 @@ WorkComponentDecorator::WorkComponentDecorator(const WorkComponentDecorator& oth
 
 WorkComponentDecorator::~WorkComponentDecorator() {}
 
+WorkComponent* WorkComponentDecorator::getWrappedComponent() const{ return wrapped.get();}
+
 void WorkComponentDecorator::execute() { wrapped->execute(); }
 void WorkComponentDecorator::add(WorkComponent* child) { wrapped->add(child); }
 void WorkComponentDecorator::remove(WorkComponent* child) { wrapped->remove(child); }
@@ -27,6 +33,8 @@ bool WorkComponentDecorator::complete() { return wrapped->complete(); }
 bool WorkComponentDecorator::reject() { return wrapped->reject(); }
 bool WorkComponentDecorator::cancel() { return wrapped->cancel(); }
 bool WorkComponentDecorator::escalate() { return wrapped->escalate(); }
+
+int WorkComponentDecorator::getPriority() const { return wrapped->getPriority(); }
 
 const WorkItemState* WorkComponentDecorator::getState() const { return wrapped->getState(); }
 Participant* WorkComponentDecorator::getAssignee() const { return wrapped->getAssignee(); }

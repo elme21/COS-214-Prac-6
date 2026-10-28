@@ -1,22 +1,15 @@
 #include "FinalApproverHandler.h"
-#include <iostream>
-using namespace std;
+#include "ApprovalRequest.h"
+#include "WorkItem.h"
 
-void FinalApproverHandler::handleRequest()
+void FinalApproverHandler::handleRequest(ApprovalRequest& request)
 {
-    if (isAuthorized())
+    if (request.getValue() <= limit)
     {
-        cout << "FinalApproverHandler: handled request." << endl;
+        request.getItem()->approve();
     }
     else
     {
-        ApprovalHandler::handleRequest();
+        request.getItem()->reject();
     }
-}
-
-bool FinalApproverHandler::isAuthorized()
-{
-    std::srand(static_cast<unsigned>(std::time(nullptr)));
-    bool randomBool = std::rand() % 2;
-    return randomBool;
 }

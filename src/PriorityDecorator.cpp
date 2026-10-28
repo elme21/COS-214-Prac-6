@@ -1,3 +1,7 @@
+/**
+ * @file PriorityDecorator.cpp
+ * @brief Implementation of PriorityDecorator (pending contract change).
+ */
 #include "PriorityDecorator.h"
 #include <algorithm>
 

@@ -1,3 +1,7 @@
+/**
+ * @file SecureDecorator.cpp
+ * @brief Implementation of SecureDecorator.
+ */
 #include "SecureDecorator.h"
 #include "Participant.h"
 
@@ -5,7 +9,7 @@ SecureDecorator::SecureDecorator(WorkComponent* component, const std::string& ro
     : WorkComponentDecorator(component), requiredRole(role) {}
 
 bool SecureDecorator::isPermitted(const Participant* participant) const {
-    return participant != nullptr && participant->hasRole(requiredRole);
+    return participant != nullptr && participant->getRole() == requiredRole;
 }
 
 bool SecureDecorator::assignTo(Participant* participant) {

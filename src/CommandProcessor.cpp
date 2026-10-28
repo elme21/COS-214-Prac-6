@@ -1,22 +1,24 @@
+/**
+ * @file CommandProcessor.cpp
+ * @brief Implementation of the CommandProcessor class.
+ */
 #include "CommandProcessor.h"
-#include <iostream>
 
-void CommandProcessor::run(unique_ptr<WorkflowCommand> command) {
-    if (command) {
-        // Only push to history if execution succeeds
-        if (command->execute()) {
-            history.push(move(command));
-        } else {
-            cout << "[CommandProcessor] Command execution was blocked or refused.\n";
-        }
+bool CommandProcessor::run(unique_ptr<WorkflowCommand> command) {
+    if (command && command->execute()) {
+        history.push(move(command));
+        return true; // Execution succeeded and pushed to history
     }
+    return false; // Blocked by decorators/validators, not pushed
 }
 
 void CommandProcessor::undo() {
     if (!history.empty()) {
         history.top()->undo();
         history.pop();
-    } else {
-        cout << "[CommandProcessor] No commands to undo.\n";
     }
+}
+
+const stack<unique_ptr<WorkflowCommand>>& CommandProcessor::getHistory() const {
+    return history;
 }

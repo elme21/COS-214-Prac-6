@@ -1,3 +1,7 @@
+/**
+ * @file ValidationDecorator.cpp
+ * @brief Implementation of ValidationDecorator.
+ */
 #include "ValidationDecorator.h"
 
 ValidationDecorator::ValidationDecorator(WorkComponent* component, Rule r)

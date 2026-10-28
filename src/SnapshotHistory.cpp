@@ -1,3 +1,7 @@
+/**
+ * @file SnapshotHistory.cpp
+ * @brief Implementation of the SnapshotHistory caretaker class.
+ */
 #include "SnapshotHistory.h"
 
 void SnapshotHistory::save(shared_ptr<InstanceSnapshot> snapshot) {

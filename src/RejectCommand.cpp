@@ -1,23 +1,22 @@
+/**
+ * @file RejectCommand.cpp
+ * @brief Implementation of RejectCommand.
+ */
 #include "RejectCommand.h"
 #include "WorkComponent.h"
-#include <iostream>
 
-RejectCommand::RejectCommand(WorkComponent* workComponent) 
-    : item(workComponent), previousState("") {}
+RejectCommand::RejectCommand(WorkComponent* workComponent)
+    : item(workComponent), previousState(nullptr), previousParticipant(nullptr) {}
 
 bool RejectCommand::execute() {
     if (!item) return false;
-
     previousState = item->getState();
-    item->reject();
-
-    cout << "[RejectCommand] Rejected work component.\n";
-    return true;
+    previousParticipant = item->getAssignee();
+    return item->reject();
 }
 
 void RejectCommand::undo() {
-    if (!item) return;
-
-    item->restoreState(previousState);
-    cout << "[RejectCommand] Undid rejection, restored state silently.\n";
+    if (item) {
+        item->restoreState(previousState, previousParticipant);
+    }
 }

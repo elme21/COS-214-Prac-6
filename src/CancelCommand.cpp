@@ -1,23 +1,22 @@
+/**
+ * @file CancelCommand.cpp
+ * @brief Implementation of CancelCommand.
+ */
 #include "CancelCommand.h"
 #include "WorkComponent.h"
-#include <iostream>
 
-CancelCommand::CancelCommand(WorkComponent* workComponent) 
-    : item(workComponent), previousState("") {}
+CancelCommand::CancelCommand(WorkComponent* workComponent)
+    : item(workComponent), previousState(nullptr), previousParticipant(nullptr) {}
 
 bool CancelCommand::execute() {
     if (!item) return false;
-
     previousState = item->getState();
-    item->cancel();
-
-    cout << "[CancelCommand] Cancelled work component.\n";
-    return true;
+    previousParticipant = item->getAssignee();
+    return item->cancel();
 }
 
 void CancelCommand::undo() {
-    if (!item) return;
-
-    item->restoreState(previousState);
-    cout << "[CancelCommand] Undid cancellation, restored state silently.\n";
+    if (item) {
+        item->restoreState(previousState, previousParticipant);
+    }
 }
