@@ -63,6 +63,8 @@ public:
     bool cancel() override;                            ///< Forwards cancel()
     bool escalate() override;                          ///< Forwards escalate()
 
+    int getPriority() const override;  ///< Forwards getPriority().
+
     const WorkItemState* getState() const override;    ///< Forwards getState().
     Participant* getAssignee() const override;            ///< Forwards getAssignee().
     /** Forwards restoreState(); never triggers decorator hooks. */
