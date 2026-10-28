@@ -2,14 +2,17 @@
 #include "ApprovalRequest.h"
 #include "WorkItem.h"
 
-void FinalApproverHandler::handleRequest(ApprovalRequest& request)
+bool FinalApproverHandler::tryDecide(ApprovalRequest& request)
 {
     if (request.getValue() <= limit)
     {
-        request.getItem()->approve();
+        request.setDecision(ApprovalRequest::Approved, getName());
+        request.getTarget()->approve();
     }
     else
     {
-        request.getItem()->reject();
+        request.setDecision(ApprovalRequest::Rejected, getName());
+        request.getTarget()->reject();
     }
+    return true;
 }

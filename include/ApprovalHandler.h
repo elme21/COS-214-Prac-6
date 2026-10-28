@@ -7,24 +7,35 @@ class ApprovalRequest;
 class ApprovalHandler
 {
 public:
-    /// @brief The constructor for the ApprovalHandler class. It initializes the successor in the chain of responsibility.
-    /// @param next The next handler in the chain
-    explicit ApprovalHandler(ApprovalHandler* next = nullptr) : successor(next) {}
-    /// @brief The destructor for the ApprovalHandler class. It is declared virtual to ensure proper cleanup of derived classes.
+    /// @brief Constructs an approval handler with a name and an optional successor.
+    /// @param name The name of the handler.
+    /// @param next The next handler in the chain.
+    explicit ApprovalHandler(const std::string& name, ApprovalHandler* next = nullptr)
+        : name(name), successor(next) {}
+    /// @brief Destroys the approval handler.
     virtual ~ApprovalHandler() {}
 
-    // Default behaviour: pass the request to the next link.
-    /// @brief It passes the request to the next handler in the chain.
-    /// @param request The approval request to handle
-    virtual void handleRequest(ApprovalRequest& request);
+    /// @brief Handles an approval request.
+    /// @param request The approval request to handle.
+    void handleRequest(ApprovalRequest& request);
 
     /// @brief Sets the successor in the chain of responsibility.
-    /// @param next The next handler in the chain
+    /// @param next The next handler in the chain.
     void setSuccessor(ApprovalHandler* next) { successor = next; }
+    /// @brief Gets the name of the handler.
+    /// @return The name of the handler.
+    const std::string& getName() const { return name; }
+
+protected:
+    /// @brief Tries to decide on an approval request.
+    /// @param request The approval request to decide on.
+    /// @return True if this handler decided the request, false otherwise.
+    virtual bool tryDecide(ApprovalRequest& request) = 0;
 
 private:
-    /// @brief A pointer to the next handler in the chain of responsibility.
-    ApprovalHandler* successor;   // non-owning
+    /// @brief The name of the handler.
+    std::string name;
+    /// @brief The next handler in the chain of responsibility.
+    ApprovalHandler* successor;
 };
-
 #endif
