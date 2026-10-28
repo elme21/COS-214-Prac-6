@@ -9,7 +9,7 @@ class RoleBasedAssignment : public AssignmentStrategy {
 public:
     RoleBasedAssignment(const std::vector<Participant*>& candidates, const std::string& requiredRole);
 
-    void route(WorkItem* item) override;
+    bool route(WorkItem* item) override;
 
 private:
     std::string requiredRole;
