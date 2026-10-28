@@ -1,3 +1,7 @@
+/**
+ * @file DefinitionRegistry.cpp
+ * @brief Implementation of DefinitionRegistry.
+ */
 #include "DefinitionRegistry.h"
 #include "WorkflowDefinition.h"
 #include <utility>
