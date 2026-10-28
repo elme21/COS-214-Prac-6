@@ -1,20 +1,17 @@
 #include "RoleApproverHandler.h"
 #include "ApprovalRequest.h"
-#include "WorkItem.h"
+#include <string>
 
-void RoleApproverHandler::handleRequest(ApprovalRequest& request)
-{
-    if (isAuthorized(request))
-    {
-        request.getItem()->approve();
-    }
-    else
-    {
-        ApprovalHandler::handleRequest(request);   // escalate
-    }
-}
+RoleApproverHandler::RoleApproverHandler(const std::string& name, const std::string& role, double limit, ApprovalHandler* next)
+    : ApprovalHandler(name, next), role(role), limit(limit) {}
 
-bool RoleApproverHandler::isAuthorized(const ApprovalRequest& request) const
+bool RoleApproverHandler::tryDecide(ApprovalRequest& request)
 {
-    return request.getValue() <= limit;
+    if (request.getValue() > limit)
+    {
+        return false;
+    }
+    request.setDecision(ApprovalRequest::Approved, name);
+    request.getTarget()->approve();
+    return true;
 }
