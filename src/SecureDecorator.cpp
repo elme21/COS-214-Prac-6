@@ -1,3 +1,7 @@
+/**
+ * @file SecureDecorator.cpp
+ * @brief Implementation of SecureDecorator.
+ */
 #include "SecureDecorator.h"
 #include "Participant.h"
 
