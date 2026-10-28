@@ -1,6 +1,6 @@
-// TEMPORARY - stands in for approval events published through EventPublisher (Member 6)
-// until the chain's handlers publish "request reached handler X" events that an
-// EventListener can show. Delete when that lands.
+// TEMPORARY - stands in for path reporting by the approval handlers (Member 4) until
+// RoleApproverHandler / FinalApproverHandler report which handler a request reached.
+// Delete when that lands.
 #include "ChainTrace.h"
 
 #include "ApprovalRequest.h"

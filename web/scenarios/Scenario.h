@@ -1,20 +1,22 @@
 #ifndef WEB_SCENARIO_H
 #define WEB_SCENARIO_H
 
-#include "TestConnectors.h"   // CaseData
+#include "TaskLookup.h"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-class WorkItem;
-class WorkflowDefinition;
+class DefinitionBuilder;
+class Participant;
 class Resource;
 class ResourceCoordinator;
-class RecordingDefinitionBuilder;
-class ParticipantDirectory;
-struct ParticipantEntry;
+class WorkflowCommand;
+class Staff;
 class Trace;
+
+typedef std::map<std::string, std::string> CaseData;
 
 /** A seeded case: an applicant or a patient, with realistic input data. */
 struct SubjectSeed {
@@ -29,7 +31,6 @@ struct TaskInfo {
     std::string id;
     std::string label;
     std::string roleHint;                 // who normally does it (Strategy is not integrated)
-    std::string connector;                // ConnectorManager name for automated tasks
     std::string outcomeQuestion;          // asked when the task is completed, if any
     std::vector<std::string> outcomes;    // allowed answers
     std::string help;                     // one line for the marker
@@ -43,17 +44,19 @@ struct ChainLink {
 };
 
 /**
- * What an industry rule may touch in ONE running instance. Rules only call real
- * engine methods on these objects; the gateway records the effects.
+ * What an industry rule may touch in ONE running instance. Rules change tasks only by
+ * running real engine commands through the instance's CommandProcessor.
  */
 class RuleContext {
 public:
     virtual ~RuleContext() {}
-    virtual WorkItem* task(const std::string& id) = 0;
+    virtual TaskRef task(const std::string& id) = 0;
+    /** Runs a real command (taking ownership) through the instance's CommandProcessor. */
+    virtual bool run(WorkflowCommand* command, const std::string& label) = 0;
     virtual CaseData& data() = 0;
     virtual Trace& trace() = 0;
     virtual ResourceCoordinator& coordinator() = 0;
-    virtual ParticipantDirectory& participants() = 0;
+    virtual Staff& staff() = 0;
 };
 
 /**
@@ -70,34 +73,32 @@ public:
     virtual std::string subjectNoun() const = 0;      // "applicant" / "patient"
     virtual std::string idPrefix() const = 0;         // "EDU" / "HC"
     virtual std::string directorName() const = 0;
+    virtual std::string definitionName() const = 0;   // name in the DefinitionRegistry
+    virtual std::vector<std::string> decoratedTasks() const = 0;
 
-    /** Runs this industry's Director against the builder (Builder pattern). */
-    virtual std::shared_ptr<WorkflowDefinition> buildDefinition(RecordingDefinitionBuilder& builder) = 0;
+    /** Runs this industry's Director (and any extra builder steps) against the builder. */
+    virtual void construct(DefinitionBuilder& builder) = 0;
 
-    virtual void seedParticipants(ParticipantDirectory& directory) = 0;
+    virtual void seedStaff(Staff& staff) = 0;
     virtual std::vector<SubjectSeed> subjects() const = 0;
     virtual std::vector<TaskInfo> tasks() const = 0;
     virtual std::vector<ChainLink> chain() const = 0;
     virtual std::string chainTaskId() const = 0;
 
-    /** Called once per new instance (e.g. set ApprovalTask request values from the case). */
+    /** Called once per new instance (request values, which automated steps fail for this case). */
     virtual void configureInstance(RuleContext& context) = 0;
 
-    /** Data handed to a test connector before an automated task runs. */
-    virtual CaseData connectorContext(RuleContext& context, const std::string& taskId) = 0;
-
     /** Engine Resource that assigning this task to this person must request, or null. */
-    virtual Resource* resourceFor(const std::string& taskId, ParticipantEntry& who) = 0;
+    virtual Resource* resourceFor(const std::string& taskId, const std::string& participantId, Staff& staff) = 0;
 
     /** Industry precondition for start(); returns false with a reason to refuse. */
     virtual bool canStart(RuleContext& context, const std::string& taskId, std::string& reason) = 0;
 
     /**
-     * Routing and decision rules, run after an engine transition succeeded and
-     * before dependants are notified. Rules call only engine methods (cancel(),
-     * makeAvailable(), ResourceCoordinator::release(), ...).
+     * Routing and decision rules, run after an engine transition succeeded and before
+     * the transition is published (so a cancelled branch is never unlocked).
      */
-    virtual void afterTransition(RuleContext& context, const std::string& taskId, const std::string& action,
+    virtual void afterTransition(RuleContext& context, const std::string& taskId,
                                  const std::string& newState, const std::string& outcome) = 0;
 };
 

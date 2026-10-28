@@ -5,18 +5,18 @@
 
 #include <string>
 
-class WorkItem;
+class WorkComponent;
 
-/** Name of the item's current engine state ("Available", "Completed", ...). */
-std::string stateOf(const WorkItem* item);
+/** Name of the component's current engine state ("Available", "Completed", ...). */
+std::string stateOf(const WorkComponent* component);
 
-/** Calls the engine's cancel() on a task and records the result in the trace. */
+/** Cancels a task with the real CancelCommand (through the CommandProcessor) and traces it. */
 bool cancelByRule(RuleContext& context, const std::string& taskId, const std::string& why);
 
-/** Calls the engine's makeAvailable() on a task and records the result in the trace. */
+/** Makes a task available with the real MakeAvailableCommand and traces it. */
 bool makeAvailableByRule(RuleContext& context, const std::string& taskId, const std::string& why);
 
-/** Calls ResourceCoordinator::release() for a task and records it in the trace. */
+/** Hands back a task's slot with the real ResourceCoordinator::release() and traces it. */
 void releaseByRule(RuleContext& context, const std::string& taskId, const std::string& why);
 
 /** Case-data lookup with a default. */

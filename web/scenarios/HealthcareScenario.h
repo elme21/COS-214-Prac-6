@@ -21,19 +21,20 @@ public:
     std::string subjectNoun() const override { return "patient"; }
     std::string idPrefix() const override { return "HC"; }
     std::string directorName() const override { return "HealthcareDirector"; }
+    std::string definitionName() const override { return "Clinic appointment"; }
+    std::vector<std::string> decoratedTasks() const override;
 
-    std::shared_ptr<WorkflowDefinition> buildDefinition(RecordingDefinitionBuilder& builder) override;
-    void seedParticipants(ParticipantDirectory& directory) override;
+    void construct(DefinitionBuilder& builder) override;
+    void seedStaff(Staff& staff) override;
     std::vector<SubjectSeed> subjects() const override;
     std::vector<TaskInfo> tasks() const override;
     std::vector<ChainLink> chain() const override;
     std::string chainTaskId() const override { return "SpecialistReferral"; }
 
     void configureInstance(RuleContext& context) override;
-    CaseData connectorContext(RuleContext& context, const std::string& taskId) override;
-    Resource* resourceFor(const std::string& taskId, ParticipantEntry& who) override;
+    Resource* resourceFor(const std::string& taskId, const std::string& participantId, Staff& staff) override;
     bool canStart(RuleContext& context, const std::string& taskId, std::string& reason) override;
-    void afterTransition(RuleContext& context, const std::string& taskId, const std::string& action,
+    void afterTransition(RuleContext& context, const std::string& taskId,
                          const std::string& newState, const std::string& outcome) override;
 
 private:

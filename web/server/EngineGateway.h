@@ -12,6 +12,9 @@
 
 class Trace;
 class WorkComponent;
+class WorkflowCommand;
+class DefinitionRegistry;
+struct TaskRef;
 
 /** An error the HTTP layer turns into a status code and a friendly message. */
 class GatewayError : public std::runtime_error {
@@ -21,16 +24,18 @@ public:
 };
 
 /**
- * @brief The ONLY place the web server touches the TIVIDY engine.
+ * @brief The ONLY place the web server touches the TIVIDY engine: JSON in, engine calls, JSON out.
  *
- * Public methods mirror WorkflowManager (createInstance, start, complete,
- * getStatus) plus the other actions a marker needs. WorkflowManager's methods
- * all throw "waiting for integration" today, so the internals call the working
- * engine classes directly. When the Facade works, only this class's internals
- * change: main.cpp and the browser code stay as they are (see INTEGRATION.md).
+ * Public methods mirror WorkflowManager (createInstance, start, complete, getStatus) plus the
+ * other actions a marker needs. The real WorkflowManager cannot be used yet (it does not link
+ * without TaskRouter, and it has no way to reach an instance's tasks), so the internals do what
+ * the Facade would: clone from the real DefinitionRegistry, run the real commands through a real
+ * CommandProcessor, wire a real ResourceCoordinator, and publish real Events on a
+ * WorkflowEventBus whose real listeners (DependencyActivator, AuditLogger, ...) react.
+ * When the Facade works, only this class's internals change (see INTEGRATION.md).
  *
- * Every response carries a "trace" (what ran, for the Patterns panel), the
- * engine's own console output, and the updated instance.
+ * Every response carries a "trace" (what ran, for the Patterns panel), the engine's own
+ * console output, the state changes, and the updated instance.
  *
  * Thread safety: one mutex around every public method (httplib uses a thread pool).
  */
@@ -52,7 +57,7 @@ public:
     Json complete(const std::string& instanceId, const std::string& taskId, const std::string& outcome);
     Json getStatus(const std::string& instanceId);
 
-    // --- the other lifecycle actions (WorkItem / WorkComponent operations) ---
+    // --- the other lifecycle actions (each runs the matching real command) ---
     Json makeAvailable(const std::string& instanceId, const std::string& taskId);
     Json assignTo(const std::string& instanceId, const std::string& taskId, const std::string& participantId);
     Json startTask(const std::string& instanceId, const std::string& taskId);
@@ -70,6 +75,7 @@ public:
 private:
     struct Industry;
     struct Instance;
+    struct Row;
     class Context;
 
     void build();
@@ -78,24 +84,28 @@ private:
 
     Json act(const std::string& instanceId, const std::string& taskId, const std::string& action,
              const std::string& participantId, const std::string& outcome);
-    bool perform(Instance& instance, Context& context, const std::string& action,
+    bool perform(Instance& instance, Context& context, const TaskRef& task, const std::string& action,
                  const std::string& participantId, const std::string& outcome);
-    bool runTemplateMethod(Instance& instance, Context& context);
-    void undoSideEffects(Instance& instance, const std::map<std::string, std::string>& dataBefore);
+    bool runTemplateMethod(Instance& instance, Context& context, const TaskRef& task);
+    bool runCommand(Instance& instance, WorkflowCommand* command, const std::string& label);
     void wire(Instance& instance, Trace& trace);
+    void publishChanges(Instance& instance, std::vector<Row>& seen, Trace& trace, bool fromUndo);
     void updateStatus(Instance& instance);
+    static std::vector<Row> rowsOf(WorkComponent* root);
 
+    Json respond(Instance& instance, bool ok, const std::string& message, bool warning, Trace& trace,
+                 const std::vector<Row>& before, const Json& console);
     Json instanceView(Instance& instance);
     Json treeNode(Industry& industry, const std::map<std::string, std::string>& data, WorkComponent* node,
                   const std::vector<int>& path);
     Json summary(Instance& instance);
 
     std::mutex mutex;
+    std::unique_ptr<DefinitionRegistry> registry;   // real Prototype manager, holds both definitions
     std::map<std::string, std::unique_ptr<Industry> > industries;
     std::vector<std::string> industryOrder;
     std::map<std::string, std::unique_ptr<Instance> > instances;
     std::vector<std::string> instanceOrder;
-    Trace* activeTrace;   // set while CommandProcessor::undo() runs
     int resetCount;
 };
 

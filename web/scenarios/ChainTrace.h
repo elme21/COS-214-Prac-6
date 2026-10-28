@@ -1,7 +1,7 @@
-// TEMPORARY - stands in for approval events published through EventPublisher (Member 6)
-// until the chain's handlers publish "request reached handler X" events that an
-// EventListener can show. Delete when that lands (use plain RoleApproverHandler /
-// FinalApproverHandler in the directors again).
+// TEMPORARY - stands in for path reporting by the approval handlers (Member 4) until
+// RoleApproverHandler / FinalApproverHandler report which handler a request reached (e.g. an
+// event on the WorkflowEventBus, or getters for role and limit). Delete when that lands (use plain
+// RoleApproverHandler / FinalApproverHandler in the scenarios again).
 #ifndef WEB_CHAINTRACE_H
 #define WEB_CHAINTRACE_H
 

@@ -1,46 +1,49 @@
 #include "RuleHelpers.h"
 
 #include "Trace.h"
+#include "WorkComponent.h"
 #include "WorkItem.h"
 #include "WorkItemState.h"
 #include "ResourceCoordinator.h"
+#include "CancelCommand.h"
+#include "MakeAvailableCommand.h"
 
-std::string stateOf(const WorkItem* item) {
-    return item == nullptr || item->getState() == nullptr ? std::string("?") : item->getState()->name();
+std::string stateOf(const WorkComponent* component) {
+    return component == nullptr || component->getState() == nullptr ? std::string("?")
+                                                                     : component->getState()->name();
 }
 
 bool cancelByRule(RuleContext& context, const std::string& taskId, const std::string& why) {
-    WorkItem* item = context.task(taskId);
-    if (item == nullptr) return false;
-    std::string before = stateOf(item);
-    bool ok = item->cancel();
-    if (ok) {
-        context.trace().engine(item->getName() + ".cancel()", "State",
-                               before + "State -> CancelledState (" + why + ")");
-    } else {
-        context.trace().engine(item->getName() + ".cancel()", "State",
-                               before + "State refused cancel(); task left as " + before + " (" + why + ")");
-    }
+    TaskRef ref = context.task(taskId);
+    if (ref.node == nullptr) return false;
+    std::string before = stateOf(ref.node);
+    bool ok = context.run(new CancelCommand(ref.node), "CancelCommand(" + taskId + ")");
+    context.trace().engine("CancelCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
+                           ok ? before + "State -> CancelledState (" + why + ")"
+                              : before + "State refused cancel(); task left as " + before + " (" + why + ")");
     return ok;
 }
 
 bool makeAvailableByRule(RuleContext& context, const std::string& taskId, const std::string& why) {
-    WorkItem* item = context.task(taskId);
-    if (item == nullptr) return false;
-    std::string before = stateOf(item);
-    bool ok = item->makeAvailable();
-    context.trace().engine(item->getName() + ".makeAvailable()", "State",
+    TaskRef ref = context.task(taskId);
+    if (ref.node == nullptr) return false;
+    std::string before = stateOf(ref.node);
+    bool ok = context.run(new MakeAvailableCommand(ref.node), "MakeAvailableCommand(" + taskId + ")");
+    context.trace().engine("MakeAvailableCommand(" + ref.item->getName() + ") -> CommandProcessor::run",
+                           "Command + State",
                            ok ? before + "State -> AvailableState (" + why + ")"
                               : before + "State refused makeAvailable() (" + why + ")");
     return ok;
 }
 
 void releaseByRule(RuleContext& context, const std::string& taskId, const std::string& why) {
-    WorkItem* item = context.task(taskId);
-    if (item == nullptr) return;
-    context.coordinator().release(item);
+    TaskRef ref = context.task(taskId);
+    if (ref.item == nullptr) return;
+    context.coordinator().release(ref.item);
     context.data().erase("resource." + taskId);
-    context.trace().engine("ResourceCoordinator::release(" + item->getName() + ")", "Mediator", why);
+    context.data().erase("resourceBy." + taskId);
+    context.trace().engine("ResourceCoordinator::release(" + ref.item->getName() + ")", "Mediator",
+                           why + " (Resource::giveBack() frees the place)");
 }
 
 std::string valueOr(const CaseData& data, const std::string& key, const std::string& fallback) {

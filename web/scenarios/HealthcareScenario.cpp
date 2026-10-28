@@ -1,16 +1,13 @@
 #include "HealthcareScenario.h"
 
 #include "HealthcareDirector.h"
-#include "RecordingDefinitionBuilder.h"
-#include "ParticipantDirectory.h"
 #include "RuleHelpers.h"
-#include "NameLookup.h"
+#include "Staff.h"
 #include "Trace.h"
 
-#include "WorkflowDefinition.h"
-#include "WorkItem.h"
+#include "AutomatedTask.h"
 #include "ApprovalTask.h"
-#include "Resource.h"
+#include "WorkItem.h"
 
 #include <cstdlib>
 
@@ -21,34 +18,32 @@ HealthcareScenario::HealthcareScenario()
       nurse(new TracingRoleApproverHandler("Nurse", 500, gp.get())) {}
 
 std::string HealthcareScenario::description() const {
-    return "Reception registers the patient and the medical aid is pre-authorised; a nurse triages. "
+    return "Reception registers the patient and the medical aid is checked automatically; a nurse triages. "
            "Urgent patients go straight to the doctor on duty; routine patients compete for a limited "
-           "doctor slot, get an SMS reminder, see a GP, and a specialist referral is approved by "
+           "doctor slot, get a reminder, see a GP, and a specialist referral is approved by "
            "Nurse -> GP -> Specialist depending on its cost.";
 }
 
-std::shared_ptr<WorkflowDefinition> HealthcareScenario::buildDefinition(RecordingDefinitionBuilder& builder) {
-    std::map<std::string, std::string> labels;
-    std::vector<TaskInfo> info = tasks();
-    for (size_t i = 0; i < info.size(); ++i) labels[info[i].id] = info[i].label;
-    builder.setTaskLabels(labels);
-
-    HealthcareDirector director(nurse.get());
-    director.construct(builder);
-    return builder.getDefinition();
+std::vector<std::string> HealthcareScenario::decoratedTasks() const {
+    return std::vector<std::string>(1, "SpecialistReferral");
 }
 
-void HealthcareScenario::seedParticipants(ParticipantDirectory& d) {
-    d.add("mthembu", "Nandi Mthembu", "Receptionist");
-    d.add("mahlangu", "Sister Grace Mahlangu", "Nurse");
-    d.add("dube", "Sister Zanele Dube", "Nurse");
-    // GPs own a Resource each: their bookable slots today (Resource capacity).
-    d.add("naidoo", "Dr Kavitha Naidoo", "GP", 0);
-    d.add("mokoena", "Dr Themba Mokoena", "GP", 2);
-    d.add("vdmerwe", "Dr Anri van der Merwe", "GP", 1);
-    d.add("sibiya", "Dr Sizwe Sibiya", "Doctor on duty (emergencies)");
-    d.add("adams", "Dr Farouk Adams", "Specialist physician");
-    d.add("system", "TIVIDY automation", "System (automated tasks)");
+void HealthcareScenario::construct(DefinitionBuilder& builder) {
+    HealthcareDirector director(nurse.get());
+    director.construct(builder);
+}
+
+void HealthcareScenario::seedStaff(Staff& s) {
+    s.add("mthembu", "Nandi Mthembu", "Receptionist");
+    s.add("mahlangu", "Sister Grace Mahlangu", "Nurse");
+    s.add("dube", "Sister Zanele Dube", "Nurse");
+    // GPs own a real Resource each: their bookable slots today (capacity = places).
+    s.add("naidoo", "Dr Kavitha Naidoo", "GP", 0);
+    s.add("mokoena", "Dr Themba Mokoena", "GP", 2);
+    s.add("vdmerwe", "Dr Anri van der Merwe", "GP", 1);
+    s.add("sibiya", "Dr Sizwe Sibiya", "Doctor on duty (emergencies)");
+    s.add("adams", "Dr Farouk Adams", "Specialist physician");
+    s.add("system", "TIVIDY automation", "System (automated steps)");
 }
 
 namespace {
@@ -72,6 +67,15 @@ SubjectSeed patient(const std::string& id, const std::string& name, const std::s
     s.data["referralValue"] = value;
     return s;
 }
+
+TaskInfo task(const std::string& id, const std::string& label, const std::string& role, const std::string& help) {
+    TaskInfo t;
+    t.id = id;
+    t.label = label;
+    t.roleHint = role;
+    t.help = help;
+    return t;
+}
 }
 
 std::vector<SubjectSeed> HealthcareScenario::subjects() const {
@@ -93,49 +97,37 @@ std::vector<SubjectSeed> HealthcareScenario::subjects() const {
         "45", "Chronic lower back pain", "Momentum Health", "MM-55410098", "active",
         "0717788990", "routine", "MRI lumbar spine", "9800"));
     list.push_back(patient("fatima", "Fatima Ebrahim",
-        "29, migraines - medical aid SUSPENDED; R31 500 referral rejected by chain",
+        "29, migraines - medical aid SUSPENDED (automated check fails); R31 500 referral rejected by chain",
         "29", "Recurring migraines", "Medshield", "MS-12003344", "suspended",
         "0648899001", "routine", "Neurology + experimental treatment", "31500"));
     return list;
 }
 
-namespace {
-TaskInfo task(const std::string& id, const std::string& label, const std::string& role,
-              const std::string& connector, const std::string& help) {
-    TaskInfo t;
-    t.id = id;
-    t.label = label;
-    t.roleHint = role;
-    t.connector = connector;
-    t.help = help;
-    return t;
-}
-}
-
 std::vector<TaskInfo> HealthcareScenario::tasks() const {
     std::vector<TaskInfo> list;
-    list.push_back(task("RegisterPatient", "Register Patient", "Receptionist", "",
+    list.push_back(task("RegisterPatient", "Register Patient", "Receptionist",
                         "Reception captures the patient's details."));
-    list.push_back(task("VerifyMedicalAid", "Verify Medical Aid", "System (automated tasks)", "medical-aid",
-                        "Pre-authorisation through the payment (medical-aid) adapter. Declined? escalate, then "
-                        "reassign to reception as a cash patient."));
-    TaskInfo triage = task("TriageAssessment", "Triage Assessment", "Nurse", "",
+    list.push_back(task("VerifyMedicalAid", "Verify Medical Aid", "System (automated steps)",
+                        "Automated medical-aid check. Fails for a suspended membership: escalate, then "
+                        "reassign to reception, who completes it as a cash patient."));
+    TaskInfo triage = task("TriageAssessment", "Triage Assessment", "Nurse",
                            "ROUTING POINT: the outcome picks the urgent or the booking branch.");
     triage.outcomeQuestion = "Triage outcome";
     triage.outcomes.push_back("routine");
     triage.outcomes.push_back("urgent");
     list.push_back(triage);
-    list.push_back(task("EmergencyConsultation", "Emergency Consultation", "Doctor on duty (emergencies)", "",
+    list.push_back(task("EmergencyConsultation", "Emergency Consultation", "Doctor on duty (emergencies)",
                         "Urgent branch only."));
-    list.push_back(task("BookAppointment", "Book Appointment Slot", "GP", "",
+    list.push_back(task("BookAppointment", "Book Appointment Slot", "GP",
                         "Assigning to a GP requests that GP's slot Resource from the ResourceCoordinator. "
-                        "No slot? escalate, then reassign to another GP."));
-    list.push_back(task("SendReminder", "Send Reminder", "System (automated tasks)", "messaging",
-                        "SMS reminder via the messaging adapter; only after booking."));
-    list.push_back(task("GPConsultation", "GP Consultation", "GP", "",
+                        "No free slot? escalate, then reassign to another GP."));
+    list.push_back(task("SendReminder", "Send Reminder", "System (automated steps)",
+                        "Automated reminder; only after booking."));
+    list.push_back(task("GPConsultation", "GP Consultation", "GP",
                         "Only after booking. Patient did not arrive? cancel() it (no-show)."));
-    list.push_back(task("SpecialistReferral", "Specialist Referral", "Nurse", "",
-                        "execute() sends the referral cost down Nurse -> GP -> Specialist -> clinical manager."));
+    list.push_back(task("SpecialistReferral", "Specialist Referral", "Nurse",
+                        "Wrapped in an AuditDecorator. execute() sends the referral cost down Nurse -> GP -> "
+                        "Specialist -> clinical manager."));
     return list;
 }
 
@@ -153,27 +145,25 @@ std::vector<ChainLink> HealthcareScenario::chain() const {
 }
 
 void HealthcareScenario::configureInstance(RuleContext& context) {
+    CaseData& data = context.data();
     ApprovalTask* referral = asApprovalTask(context.task("SpecialistReferral"));
     if (referral != nullptr) {
-        std::string value = valueOr(context.data(), "referralValue", "0");
+        std::string value = valueOr(data, "referralValue", "0");
         referral->setRequestValue(std::atof(value.c_str()));
         context.trace().engine("ApprovalTask::setRequestValue(" + value + ")", "Chain of Responsibility",
                                "referral cost (R) travels down the chain");
     }
-}
-
-CaseData HealthcareScenario::connectorContext(RuleContext& context, const std::string& taskId) {
-    CaseData data = context.data();
-    data["task"] = taskId;
-    if (taskId == "SendReminder") {
-        data["message"] = "Reminder: " + data["name"] + ", your appointment with " +
-                          valueOr(data, "resource.BookAppointment", "the clinic") + " is booked.";
+    AutomatedTask* medicalAid = asAutomatedTask(context.task("VerifyMedicalAid"));
+    if (medicalAid != nullptr && valueOr(data, "medicalAidStatus", "") != "active") {
+        medicalAid->setStepSucceeds(false);
+        context.trace().scenario("HealthcareScenario rule", "industry data",
+                                 data["medicalAid"] + " membership is " + data["medicalAidStatus"] +
+                                 ": AutomatedTask::setStepSucceeds(false) on Verify Medical Aid");
     }
-    return data;
 }
 
-Resource* HealthcareScenario::resourceFor(const std::string& taskId, ParticipantEntry& who) {
-    return taskId == "BookAppointment" ? who.slots.get() : nullptr;
+Resource* HealthcareScenario::resourceFor(const std::string& taskId, const std::string& participantId, Staff& s) {
+    return taskId == "BookAppointment" ? s.slotsOf(participantId) : nullptr;
 }
 
 bool HealthcareScenario::canStart(RuleContext& context, const std::string& taskId, std::string& reason) {
@@ -184,7 +174,7 @@ bool HealthcareScenario::canStart(RuleContext& context, const std::string& taskI
     return false;
 }
 
-void HealthcareScenario::afterTransition(RuleContext& context, const std::string& taskId, const std::string&,
+void HealthcareScenario::afterTransition(RuleContext& context, const std::string& taskId,
                                          const std::string& newState, const std::string& outcome) {
     CaseData& data = context.data();
     Trace& trace = context.trace();

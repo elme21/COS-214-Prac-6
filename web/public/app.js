@@ -17,47 +17,46 @@ const ACTIONS = [
   { key: 'escalate', label: 'escalate' },
 ];
 
-// Status of each pattern in the build, shown on the "Generic engine" tab.
+// Status of each pattern in this build, shown on the "Generic engine" tab.
 // working = real engine classes run; partial = real classes run with a known gap;
-// temporary = a web stand-in does part of the job; missing = not integrated yet.
+// temporary = a web stand-in does part of the job; missing = not integrated (does not build or link).
 const PATTERNS = [
-  ['Facade', 'WorkflowManager', 'missing', 'Every method throws "waiting for integration". EngineGateway mirrors its interface and stands in.'],
-  ['Builder', 'DefinitionBuilder, CodeDefinitionBuilder, EnrolmentDirector (+ HealthcareDirector)', 'partial', 'addStage/addTask are real. Dependencies and approval chains are recorded by RecordingDefinitionBuilder (temporary) because CodeDefinitionBuilder throws.'],
-  ['Prototype', 'WorkComponent::clone, WorkflowDefinition::cloneRoot, DefinitionRegistry', 'partial', 'Every instance is a real deep clone. DefinitionRegistry has no .cpp, so the gateway keeps the definition.'],
+  ['Facade', 'WorkflowManager', 'missing', 'Not used: it cannot link without TaskRouter (Strategy does not compile) and has no way to reach an instance\'s tasks. EngineGateway mirrors its interface and does the same steps with the real classes.'],
+  ['Builder', 'DefinitionBuilder, CodeDefinitionBuilder, EnrolmentDirector, HealthcareDirector', 'working', 'Both definitions are built by the real CodeDefinitionBuilder: stages, tasks, addDependency, setApprovalChain and addDecorator("audit"). StageNameRecorder (temporary) only notes stage names.'],
+  ['Prototype', 'WorkComponent::clone, WorkflowDefinition::cloneRoot, DefinitionRegistry', 'working', 'Both definitions sit in the real DefinitionRegistry; every instance is a deep clone of one of them.'],
   ['Composite', 'WorkComponent, WorkStage, WorkItem', 'working', 'The tree you see is walked through getChild() on real stages and tasks.'],
-  ['Iterator', 'WorkIterator, DepthFirstIterator, ReadyTaskIterator', 'partial', 'DepthFirstIterator drives task lists. ReadyTaskIterator currently returns Completed items (shown as-is under each instance).'],
-  ['Decorator', 'WorkComponentDecorator, Audit/Priority/Secure/ValidationDecorator', 'missing', 'Concrete decorators have headers but no .cpp, so none is applied.'],
-  ['Template Method', 'WorkItem::execute + ManualTask / AutomatedTask / ApprovalTask::perform', 'working', 'The execute button runs the real skeleton.'],
+  ['Iterator', 'WorkIterator, DepthFirstIterator, ReadyTaskIterator', 'working', '"Available work" comes from the real ReadyTaskIterator; task lists use DepthFirstIterator.'],
+  ['Decorator', 'WorkComponentDecorator, AuditDecorator (+ Secure, Validation, Priority)', 'partial', 'One task per industry is wrapped in a real AuditDecorator through the builder; its audit lines appear in the Patterns panel. The builder only offers "audit", so the other three are compiled but not applied.'],
+  ['Template Method', 'WorkItem::execute + ManualTask / AutomatedTask / ApprovalTask::perform', 'working', 'The execute button runs the real skeleton. Automated steps can fail (setStepSucceeds(false)).'],
   ['State', 'WorkItemState + 8 concrete states', 'working', 'Every refusal you see comes from a state returning false.'],
-  ['Command', 'WorkflowCommand, CommandProcessor (+ WebCommand)', 'temporary', 'Real CommandProcessor and WorkflowCommand interface; WebCommand stands in for the 5 commands that do not compile.'],
-  ['Memento', 'WorkflowInstance, InstanceSnapshot, SnapshotHistory', 'working', 'Snapshot / Restore call the real originator and caretaker.'],
-  ['Mediator', 'WorkCoordinator, ResourceCoordinator, Colleague, Participant, Resource', 'partial', 'Dependencies and slot requests are decided by the real ResourceCoordinator. Resource capacity is never consumed yet.'],
+  ['Command', 'WorkflowCommand, CommandProcessor + 8 concrete commands', 'working', 'Every action runs a real command through the instance\'s CommandProcessor; Undo pops getHistory(). A command\'s undo restores only its own task.'],
+  ['Memento', 'WorkflowInstance, InstanceSnapshot, SnapshotHistory', 'partial', 'Snapshot / Restore use the real classes. InstanceSnapshot does not save the instance data, so the gateway keeps a copy (temporary).'],
+  ['Mediator', 'WorkCoordinator, ResourceCoordinator, Colleague, Participant, Resource', 'working', 'Dependencies and live doctor-slot contention: requestResource() takes a place, release() gives it back.'],
   ['Chain of Responsibility', 'ApprovalHandler, RoleApproverHandler, FinalApproverHandler, ApprovalRequest', 'working', 'Real handlers decide. Thin tracing subclasses (temporary) only report which handler a request reached.'],
-  ['Adapter', 'Connector, ConnectorManager, PaymentConnector, MessagingConnector, StudentRecordsConnector', 'temporary', 'Member 7 classes do not exist yet: documented test adapters on the stub Connector interface (web/temporary_stubs).'],
-  ['Observer', 'EventPublisher, EventListener, DependencyActivator, AuditLogger, ...', 'missing', 'Not yet integrated. PendingIntegration.cpp is the single wiring point.'],
-  ['Strategy', 'TaskRouter, AssignmentStrategy, RoleBased / Workload / RuleBasedAssignment', 'missing', 'Not yet integrated. The participant is picked manually.'],
+  ['Observer', 'WorkflowEventBus, DependencyActivator, AuditLogger, NotificationSender, MonitoringCollector', 'working', 'Each instance has its own bus. DependencyActivator unlocks dependants; the audit trail is AuditLogger::getLog(). EngineGateway publishes the events, because WorkflowManager would but cannot be used.'],
+  ['Strategy', 'TaskRouter, AssignmentStrategy, RoleBased / Workload / RuleBasedAssignment', 'missing', 'Does not compile (route() is void in the headers, bool in the .cpp files). Assignment is manual.'],
 ];
 
 const GENERIC_CLASSES = [
   'WorkComponent', 'WorkStage', 'WorkItem', 'ManualTask', 'AutomatedTask', 'ApprovalTask',
   'WorkItemState', 'CreatedState', 'AvailableState', 'AssignedState', 'InProgressState', 'CompletedState',
   'RejectedState', 'CancelledState', 'EscalatedState', 'WorkIterator', 'DepthFirstIterator', 'ReadyTaskIterator',
-  'DefinitionBuilder', 'CodeDefinitionBuilder', 'WorkflowDefinition', 'WorkflowInstance', 'InstanceSnapshot',
-  'SnapshotHistory', 'WorkflowCommand', 'CommandProcessor', 'WorkCoordinator', 'ResourceCoordinator', 'Colleague',
-  'Participant', 'Resource', 'ApprovalHandler', 'ApprovalRequest', 'RoleApproverHandler', 'FinalApproverHandler',
+  'DefinitionBuilder', 'CodeDefinitionBuilder', 'DefinitionRegistry', 'WorkflowDefinition', 'WorkflowInstance',
+  'InstanceSnapshot', 'SnapshotHistory', 'WorkflowCommand', 'CommandProcessor', 'MakeAvailableCommand',
+  'AssignCommand', 'StartCommand', 'CompleteCommand', 'ApproveCommand', 'RejectCommand', 'CancelCommand',
+  'EscalateCommand', 'WorkComponentDecorator', 'AuditDecorator', 'WorkCoordinator', 'ResourceCoordinator',
+  'Colleague', 'Participant', 'Resource', 'ApprovalHandler', 'ApprovalRequest', 'RoleApproverHandler',
+  'FinalApproverHandler', 'Event', 'EventPublisher', 'EventListener', 'WorkflowEventBus', 'DependencyActivator',
+  'AuditLogger', 'NotificationSender', 'MonitoringCollector',
 ];
 
 const TEMPORARY = [
-  ['server/EngineGateway', 'WorkflowManager (Facade)', 'Permanent wrapper; only its internals change when WorkflowManager works.'],
-  ['server/WebCommands', 'Assign/Complete/Approve/Reject/CancelCommand', 'Member 5'],
-  ['server/HistoryLog', 'CommandProcessor history getter / AuditLogger', 'Members 5 and 6'],
-  ['server/PendingIntegration', 'EventPublisher, DependencyActivator, TaskRouter, AssignmentStrategy', 'Member 6'],
-  ['scenarios/RecordingDefinitionBuilder', 'CodeDefinitionBuilder::addDependency / setApprovalChain', 'Member 3'],
-  ['scenarios/NameLookup', 'WorkStage names, typed task access', 'Members 1 and 3'],
-  ['scenarios/ParticipantDirectory', 'Participant name / role', 'Member 4'],
-  ['scenarios/TestConnectors', 'PaymentConnector, MessagingConnector, StudentRecordsConnector', 'Member 7'],
-  ['temporary_stubs/Connector*, ConnectorManager*', 'Connector, ConnectorManager (copied test stubs)', 'Member 7'],
-  ['scenarios/ChainTrace', 'approval events from the chain (Observer)', 'Member 6'],
+  ['server/EngineGateway (internals)', 'WorkflowManager (Facade)', 'Member 7 + Member 6 (link, accessors)'],
+  ['scenarios/TaskLookup', 'finding a task by ID in an instance (WorkflowManager keeps it private)', 'Member 7'],
+  ['scenarios/StageNameRecorder', 'a name on WorkStage', 'Member 1'],
+  ['scenarios/ChainTrace', 'approval handlers reporting which handler a request reached', 'Member 4'],
+  ['server/PendingIntegration', 'TaskRouter / AssignmentStrategy (manual pick instead)', 'Member 6'],
+  ['case-data copy beside each snapshot (EngineGateway)', 'InstanceSnapshot saving WorkflowInstance data', 'Member 5'],
 ];
 
 const ui = {
@@ -365,14 +364,14 @@ function renderResources() {
     <h3>Doctor slots (engine Resources)</h3>
     ${slots.map((r) => `
       <div class="slot">
-        <span><b>${esc(r.name)}</b><br><span class="note">Resource(capacity ${esc(r.capacity)})</span></span>
+        <span><b>${esc(r.name)}</b><br><span class="note">${esc(r.available)} of ${esc(r.capacity)} places free</span></span>
         <span style="text-align:right">
-          <span class="${r.isFree ? 'free' : 'full'}">isFree() = ${r.isFree}</span><br>
-          <span class="note">${r.grantedTo.length ? 'granted to ' + r.grantedTo.map((g) => esc(g.instance)).join(', ') : 'no grants'}</span>
+          <span class="${r.isFree ? 'free' : 'full'}">${r.isFree ? 'isFree() = true' : 'FULL'}</span><br>
+          <span class="note">${r.grantedTo.length ? 'held by ' + r.grantedTo.map((g) => esc(g.instance)).join(', ') : 'no bookings'}</span>
         </span>
       </div>`).join('')}
-    <p class="note">Values come straight from the engine. Resource::isFree() is currently just capacity &gt; 0,
-    so a granted slot does not reduce capacity yet (Member 4 gap). The web layer does not count slots.</p>
+    <p class="note">Live from the engine: ResourceCoordinator::requestResource() takes a place, release() gives it back.
+    The web layer does not count places.</p>
   </div>`;
 }
 
@@ -386,7 +385,6 @@ function renderPane(inst, slot) {
     const t = findTaskView(inst, id);
     return `<button class="chip-btn" type="button" data-act="select" data-inst="${esc(inst.id)}" data-task="${esc(id)}">${esc(t ? t.name : id)}</button>`;
   }).join('');
-  const ready = inst.readyIterator.map((id) => { const t = findTaskView(inst, id); return t ? t.name : id; });
 
   return `
   <article class="card pane">
@@ -409,13 +407,12 @@ function renderPane(inst, slot) {
     </div>
     <div class="pane-body">
       ${banner ? `<div class="banner ${banner.ok ? (banner.warning ? 'warn' : 'ok') : 'bad'}">${banner.ok ? '' : 'Refused. '}${esc(banner.message)}</div>` : ''}
-      <div class="available"><b class="small">Available work:</b>
+      <div class="available"><b class="small" title="from the engine's ReadyTaskIterator">Available work:</b>
         ${availableChips || `<span class="empty small">${inst.started ? 'none right now' : 'press Start'}</span>`}</div>
       ${renderNode(inst, inst.tree, meta, true)}
-      <p class="note">Engine <code>ReadyTaskIterator</code> currently yields: ${ready.length ? esc(ready.join(', ')) : '(nothing)'}
-      &mdash; it selects Completed tasks, a known Member 1 gap; "Available work" above uses <code>DepthFirstIterator</code>.</p>
-      <details ${inst.history.length > 1 ? 'open' : ''}>
-        <summary>History / audit trail (${inst.history.length})</summary>
+      <p class="note">"Available work" is what the engine's <code>ReadyTaskIterator</code> returns.</p>
+      <details ${inst.audit.length > 3 ? 'open' : ''}>
+        <summary>Audit trail - AuditLogger (${inst.audit.length})</summary>
         ${renderHistory(inst)}
       </details>
       ${inst.snapshots.length ? `<p class="note">Snapshots: ${inst.snapshots.map(esc).join(' | ')}</p>` : ''}
@@ -436,13 +433,15 @@ function renderNode(inst, node, meta, isRoot) {
   const who = t.assignee ? `${esc(t.assignee.name)}` : '<span class="empty">unassigned</span>';
   const extra = [];
   if (t.requestValue !== undefined) extra.push(`request value ${esc(meta.key === 'healthcare' ? 'R' + t.requestValue : t.requestValue)}`);
+  if (t.stepSucceeds === false) extra.push('<b>automated step will fail</b>');
   if (t.resourceHeldWith) extra.push(`slot granted with ${esc(t.resourceHeldWith)}`);
   else if (t.resourceRefusedBy && (t.state === 'Assigned' || t.state === 'Escalated')) extra.push(`slot REFUSED by ${esc(t.resourceRefusedBy)}`);
   if (t.prerequisites.length) extra.push('after ' + t.prerequisites.map((p) => { const pt = findTaskView(inst, p); return esc(pt ? pt.name : p); }).join(' + '));
+  const decorated = (t.decorators || []).map((d) => `<span class="tag tag-engine" title="wrapped by a real decorator">${esc(d)}</span>`).join('');
   return `
     <div class="task ${selected ? 'selected' : ''} ${changed ? 'changed' : ''}" data-act="select" data-inst="${esc(inst.id)}" data-task="${esc(t.id)}" role="button" tabindex="0">
       ${stateChip(t.state)}
-      <div><div class="name">${esc(t.name)} <span class="kind">${esc(kindLabel(t.kind))}</span></div>
+      <div><div class="name">${esc(t.name)} <span class="kind">${esc(kindLabel(t.kind))}</span>${decorated}</div>
         <div class="meta"><span class="mono">${esc(t.id)}</span> &middot; ${who}${extra.length ? ' &middot; ' + extra.join(' &middot; ') : ''}</div></div>
     </div>
     ${selected ? renderActions(inst, t, meta) : ''}`;
@@ -457,7 +456,7 @@ function renderActions(inst, t, meta) {
   return `
   <div class="actions">
     <div class="help">${esc(t.help || '')} <br>Usually done by: <b>${esc(t.roleHint || '-')}</b>.
-      ${t.connector ? `Connector: <code>${esc(t.connector)}</code>.` : ''}</div>
+      Assignment is manual: the Strategy classes do not compile yet.</div>
     <div class="row">
       <select data-act="pick-person" data-key="${esc(key)}" aria-label="Participant">
         ${people.map((p) => `<option value="${esc(p.id)}" ${ui.picks[key] === p.id ? 'selected' : ''}>${esc(p.name)} - ${esc(p.role)}${p.slots >= 0 ? ` (slots ${p.slots})` : ''}</option>`).join('')}
@@ -476,14 +475,14 @@ function renderActions(inst, t, meta) {
 }
 
 function renderHistory(inst) {
-  return `<div class="table-wrap"><table class="history">
-    <thead><tr><th>#</th><th>Time</th><th>Action</th><th>Task</th><th>Result</th><th>Detail</th></tr></thead>
-    <tbody>${inst.history.slice().reverse().map((h) => `
-      <tr><td>${h.seq}</td><td>${esc(h.time)}</td><td>${esc(h.action)}</td><td>${esc(h.taskName)}</td>
-      <td><span class="res res-${esc(h.result)}">${esc(h.result)}</span></td>
-      <td>${esc(h.detail)}${h.changes && h.changes.length ? `<div class="note">${h.changes.map(esc).join('<br>')}</div>` : ''}</td></tr>`).join('')}
-    </tbody></table></div>
-    <p class="note">Kept by the temporary HistoryLog (CommandProcessor has no history getter; AuditLogger not integrated).</p>`;
+  return `
+    <ol class="audit">${inst.audit.slice().reverse().map((line) => `<li class="mono small">${esc(line)}</li>`).join('')}</ol>
+    <p class="note">Written by the engine's <code>AuditLogger</code>, which listens to this instance's <code>WorkflowEventBus</code>
+    (${esc(inst.eventsTotal)} events counted by <code>MonitoringCollector</code>).</p>
+    <h4 class="small">Command history - <code>CommandProcessor::getHistory()</code> (${esc(inst.commandDepth)}, newest first)</h4>
+    ${inst.commandHistory.length ? `<ol class="audit">${inst.commandHistory.map((c) => `<li class="mono small">${esc(c)}</li>`).join('')}</ol>` : '<p class="empty small">empty</p>'}
+    <h4 class="small">Notifications - <code>NotificationSender::getSent()</code> (${esc(inst.notifications.length)})</h4>
+    ${inst.notifications.length ? `<ol class="audit">${inst.notifications.slice(-5).reverse().map((n) => `<li class="small">${esc(n)}</li>`).join('')}</ol>` : '<p class="empty small">none</p>'}`;
 }
 
 function kindTag(kind) {
@@ -533,8 +532,8 @@ function renderEngine() {
   <div class="card">
     <h2>One generic engine, two industries</h2>
     <p class="muted">Both industries run on the same compiled engine classes from <code>include/</code> and <code>src/</code>.
-    Only the definitions, people, rules and data differ (<code>web/scenarios/</code>), which the spec allows:
-    "industry-specific definitions, rules, data and adapters are permitted".</p>
+    Only the definitions, people, rules and data differ (<code>web/scenarios/</code>); the spec permits
+    industry-specific definitions, rules and data.</p>
   </div>
   <div class="engine-grid">
     <div class="card">
@@ -549,7 +548,7 @@ function renderEngine() {
       <p class="small"><b>People:</b> ${ind.participants.map((p) => esc(p.name) + ' (' + esc(p.role) + ')').join(', ')}</p>
       <p class="small"><b>Approval chain:</b> ${ind.chain.map((l) => esc(l.role)).join(' &rarr; ')}</p>
       <div class="mini-tree"><ul>${miniTree(ind.definition)}</ul></div>
-      ${ind.pendingBuilderSteps.length ? `<p class="note">Builder steps recorded but not applied: ${ind.pendingBuilderSteps.map((s) => esc(s.step + ' ' + s.task)).join(', ')}</p>` : ''}
+      <p class="note">Decorated through the builder: ${ind.decorated.map(esc).join(', ')} (AuditDecorator).</p>
     </div>`).join('')}
   </div>
   <div class="card">
@@ -560,7 +559,7 @@ function renderEngine() {
         <td><span class="pill pill-${s}">${{ working: 'working', partial: 'partial', temporary: 'temporary stand-in', missing: 'not yet integrated' }[s]}</span></td>
         <td>${esc(n)}</td></tr>`).join('')}</tbody>
     </table></div>
-    <p class="note">Observer: ${esc(meta.observer)}<br>Strategy: ${esc(meta.strategy)}</p>
+    <p class="note">Strategy: ${esc(meta.strategy)}</p>
   </div>
   <div class="engine-grid">
     <div class="card">
