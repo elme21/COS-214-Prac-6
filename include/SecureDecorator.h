@@ -13,7 +13,7 @@
  *
  * Only participants holding the required role can be assigned, and only the
  * assigned participant, if they hold it, can approve, reject or complete.
- * Requires Participant::hasRole(const std::string&) const.
+ * Compares the participant's role with the required one using Participant::getRole().
  *
  * @par Design pattern
  * Decorator (ConcreteDecorator role).
@@ -47,7 +47,7 @@ public:
     WorkComponent* clone() const override;
 
 private:
-    /** @return true if @p participant is non-null and holds the required role. */
+    /** @return true if @p participant is non-null and its role equals the required role. */
     bool isPermitted(const Participant* participant) const;
 
     std::string requiredRole;  ///< Role needed to be assigned and to act.
