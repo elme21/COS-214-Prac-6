@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Force $Obj | Out-Null
 
 # Engine files that do not compile yet (see web/INTEGRATION.md). Remove a name here once it is fixed.
 $ExcludedEngineFiles = @(
-    'ApproveCommand.cpp', 'AssignCommand.cpp', 'CancelCommand.cpp', 'CompleteCommand.cpp', 'RejectCommand.cpp'
+    'ApproveCommand.cpp', 'AssignCommand.cpp', 'CancelCommand.cpp', 'RejectCommand.cpp'
 )
 
 $engine    = (Get-ChildItem (Join-Path $Project 'src') -Filter *.cpp | Where-Object { $ExcludedEngineFiles -notcontains $_.Name }).FullName
