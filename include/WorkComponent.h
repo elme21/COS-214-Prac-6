@@ -128,6 +128,9 @@ public:
      */
     virtual Participant* getAssignee() const = 0;
 
+    /** Priority of this work; higher is more urgent. */
+    virtual int getPriority() const { return 0; }
+
     /**
      * @brief Restores an earlier state and assignee when a command is undone.
      *

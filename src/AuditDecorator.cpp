@@ -1,3 +1,7 @@
+/**
+ * @file AuditDecorator.cpp
+ * @brief Implementation of AuditDecorator.
+ */
 #include "AuditDecorator.h"
 
 AuditDecorator::AuditDecorator(WorkComponent* component, const std::string& name, Sink s)
