@@ -44,6 +44,10 @@ public:
     /** @brief Destroys the wrapped component. */
     virtual ~WorkComponentDecorator();
 
+    /**@brief Provides access to the component wrapped by this decorator.*/
+    /** @return A pointer to the wrapped WorkComponent without transferring ownership.*/
+    WorkComponent* getWrappedComponent() const;
+
     /** @name Forwarded operations
      *  Passed unchanged to the wrapped component.
      *  @{ */
