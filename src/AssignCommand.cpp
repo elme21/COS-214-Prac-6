@@ -1,3 +1,7 @@
+/**
+ * @file AssignCommand.cpp
+ * @brief Implementation of AssignCommand.
+ */
 #include "AssignCommand.h"
 #include "WorkComponent.h"
 

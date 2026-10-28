@@ -1,3 +1,7 @@
+/**
+ * @file InstanceSnapshot.cpp
+ * @brief Implementation of the InstanceSnapshot class.
+ */
 #include "InstanceSnapshot.h"
 
 InstanceSnapshot::InstanceSnapshot(const string& status, shared_ptr<WorkComponent> rootComponent)

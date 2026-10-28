@@ -1,3 +1,7 @@
+/**
+ * @file MakeAvailableCommand.cpp
+ * @brief Implementation of MakeAvailableCommand.
+ */
 #include "MakeAvailableCommand.h"
 #include "WorkComponent.h"
 

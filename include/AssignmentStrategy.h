@@ -8,10 +8,31 @@ class WorkItem;      // Person 2
 class Participant;   // Person 4
 
 /**
- * Strategy pattern - Strategy.
- * Matches the class diagram: route(item) : void. A strategy chooses a
- * participant from the candidates it was given and assigns the item to them
- * (item->assignTo). If nobody is suitable the item is left unassigned.
+ * @file AssignmentStrategy.h
+ * @brief Strategy interface for deciding who gets a work item.
+ *
+ * @details Separates "which rule picks the participant" from "what a work item is", so an
+ * organisation can change its assignment policy without touching WorkItem or TaskRouter.
+ *
+ * @author Logan (Observer and Strategy)
+ * @date 2026-10-28
+ * @ingroup StrategyPattern
+ */
+
+/**
+ * @brief Strategy: one rule for choosing who receives a work item.
+ *
+ * route(item) chooses a participant from the candidates it was given and calls
+ * WorkItem::assignTo() on the item. The item's state machine may refuse
+ * (e.g. the item is not available yet); route() reports that through its result.
+ *
+ * @par Adding a new rule
+ * Derive from AssignmentStrategy, override route(), and pass the new object to TaskRouter::setStrategy().
+ * No existing class changes.
+ *
+ * @invariant Strategies never own the participants or the item.
+ * @ingroup StrategyPattern
+ * @see TaskRouter, RoleBasedAssignment, WorkloadAssignment, RuleBasedAssignment
  */
 class AssignmentStrategy {
 public:

@@ -1,3 +1,7 @@
+/**
+ * @file EscalateCommand.cpp
+ * @brief Implementation of EscalateCommand.
+ */
 #include "EscalateCommand.h"
 #include "WorkComponent.h"
 

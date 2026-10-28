@@ -1,3 +1,7 @@
+/**
+ * @file WorkflowInstance.cpp
+ * @brief Implementation of the WorkflowInstance originator class.
+ */
 #include "WorkflowInstance.h"
 #include "WorkComponent.h" 
 
@@ -36,4 +40,12 @@ shared_ptr<WorkComponent> WorkflowInstance::getRoot() const {
 
 void WorkflowInstance::setRoot(shared_ptr<WorkComponent> newRoot) {
     root = newRoot;
+}
+
+const map<string, string>& WorkflowInstance::getData() const {
+    return data;
+}
+
+void WorkflowInstance::setData(const map<string, string>& newData) {
+    data = newData;
 }

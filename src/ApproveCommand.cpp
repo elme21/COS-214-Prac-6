@@ -1,3 +1,7 @@
+/**
+ * @file ApproveCommand.cpp
+ * @brief Implementation of ApproveCommand.
+ */
 #include "ApproveCommand.h"
 #include "WorkComponent.h"
 

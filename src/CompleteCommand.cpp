@@ -1,3 +1,7 @@
+/**
+ * @file CompleteCommand.cpp
+ * @brief Implementation of CompleteCommand.
+ */
 #include "CompleteCommand.h"
 #include "WorkComponent.h"
 

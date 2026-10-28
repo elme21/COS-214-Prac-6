@@ -1,3 +1,7 @@
+/**
+ * @file RejectCommand.cpp
+ * @brief Implementation of RejectCommand.
+ */
 #include "RejectCommand.h"
 #include "WorkComponent.h"
 

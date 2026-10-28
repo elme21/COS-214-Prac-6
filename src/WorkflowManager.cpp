@@ -3,6 +3,7 @@
 #include "../include/WorkflowDefinition.h"
 #include "../include/WorkflowInstance.h"
 #include "../include/WorkComponent.h"
+#include "../include/WorkComponentDecorator.h"
 #include "../include/WorkStage.h"
 #include "../include/WorkItem.h"
 #include "../include/WorkItemState.h"
@@ -37,6 +38,23 @@ std::string WorkflowManager::createInstance(const std::string& name){
  run.commands=std::make_shared<CommandProcessor>();
 
  std::function<void(WorkComponent*)> walk=[&](WorkComponent* node){
+
+    if(auto* decorator=dynamic_cast<WorkComponentDecorator*>(node)){
+
+        WorkComponent* wrapped=decorator->getWrappedComponent();
+
+        walk(wrapped);
+
+        while(auto* innerDecorator=dynamic_cast<WorkComponentDecorator*>(wrapped))
+            wrapped=innerDecorator->getWrappedComponent();
+
+        if(auto* item=dynamic_cast<WorkItem*>(wrapped)){
+            const std::string id=item->getId().empty()?item->getName():item->getId();
+            run.components[id]=node;
+        }
+
+        return;
+    }
 
     if(auto* item=dynamic_cast<WorkItem*>(node)){
 
@@ -151,7 +169,7 @@ void WorkflowManager::completeInInstance(const std::string& id,const std::string
  if(!item->getState()||item->getState()->name()!="InProgress")
     throw std::logic_error("Task must be InProgress before completion: "+taskId);
 
- run.commands->run(std::unique_ptr<WorkflowCommand>(new CompleteCommand(item)));
+ run.commands->run(std::unique_ptr<WorkflowCommand>(new CompleteCommand(run.components.at(taskId))));
 
  if(!item->isComplete())
     throw std::logic_error("Completion was refused: "+taskId);
