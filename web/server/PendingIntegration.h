@@ -1,7 +1,7 @@
-// TEMPORARY - stands in for EventPublisher / EventListener (Observer) and TaskRouter /
-// AssignmentStrategy (Strategy), Member 6, until those classes exist in include/ and src/.
-// This is the ONLY file that wires those two patterns. Delete the stand-in bodies when
-// they land; keep the two call sites in EngineGateway.
+// TEMPORARY - stands in for TaskRouter / AssignmentStrategy (Strategy, Member 6) until they
+// compile: AssignmentStrategy::route() is declared void, but RoleBasedAssignment,
+// RuleBasedAssignment, WorkloadAssignment and TaskRouter define bool route(). Delete the
+// stand-in body when that lands; keep the call site in EngineGateway.
 #ifndef WEB_PENDINGINTEGRATION_H
 #define WEB_PENDINGINTEGRATION_H
 
@@ -14,33 +14,17 @@ class Trace;
 namespace PendingIntegration {
 
 /**
- * Observer hook. EngineGateway calls this after EVERY successful transition.
+ * Strategy hook. EngineGateway calls this before every manual assignment.
  *
- * TODO(Member 6): publish an event, e.g.
- *     eventPublisher->publish(WorkflowEvent(instanceId, item->getId(), from, to));
- * and let DependencyActivator (EventListener) call
- *     item->changed("completed");   // -> ResourceCoordinator::notifyChanged
- * AuditLogger can then replace web/server/HistoryLog.
- *
- * Until then this function plays DependencyActivator's part directly: when an
- * item becomes complete it calls the real Colleague::changed(), and the real
- * ResourceCoordinator (Mediator) unlocks the dependants.
- */
-void publishTransition(WorkItem* item, const std::string& from, const std::string& to, Trace& trace);
-
-/**
- * Strategy hook. EngineGateway calls this before every assignTo().
- *
- * TODO(Member 6): return taskRouter->route(item, candidates), where TaskRouter holds
- * the AssignmentStrategy set for the task (RoleBasedAssignment, WorkloadAssignment,
- * RuleBasedAssignment), and let the UI's choice become an optional override.
+ * TODO(Member 6): once the Strategy classes compile, offer "auto-assign": call
+ * taskRouter->setStrategy(strategyForTask) then taskRouter->route(item), and show which
+ * strategy chose the participant. The manual pick stays as an override.
  *
  * Until then the participant picked manually in the UI is returned unchanged.
  */
 Participant* chooseParticipant(WorkItem* item, Participant* pickedInUi, Trace& trace);
 
-/** Status lines for the "Generic engine" view. */
-std::string observerStatus();
+/** Status line for the "Generic engine" view. */
 std::string strategyStatus();
 
 }

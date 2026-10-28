@@ -48,4 +48,7 @@ void HealthcareDirector::construct(DefinitionBuilder& builder)
     builder.addDependency("GPConsultation", "SpecialistReferral");
 
     builder.setApprovalChain("SpecialistReferral", referralChain);
+
+    // every attempt on the referral (including refused ones) is audited
+    builder.addDecorator("SpecialistReferral", "audit");
 }
