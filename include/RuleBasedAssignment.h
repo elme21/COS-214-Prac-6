@@ -16,7 +16,7 @@ public:
 
     explicit RuleBasedAssignment(const std::vector<Participant*>& candidates);
 
-    void route(WorkItem* item) override;
+    bool route(WorkItem* item) override;
 
     void addRule(Rule rule);
     void clearRules();
