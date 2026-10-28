@@ -40,7 +40,7 @@ public:
         : candidates(candidates) {}
     virtual ~AssignmentStrategy() {}
 
-    virtual void route(WorkItem* item) = 0;
+    virtual bool route(WorkItem* item) = 0;
 
     /** Replace the pool of participants this rule chooses from. */
     void setCandidates(const std::vector<Participant*>& c) { candidates = c; }
