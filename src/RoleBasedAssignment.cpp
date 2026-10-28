@@ -1,16 +1,26 @@
+/**
+ * @file RoleBasedAssignment.cpp
+ * @brief Implementation of RoleBasedAssignment.
+ *
+ * @details Scans the candidates in order and assigns to the first one whose role equals the required role.
+ *
+ * @author Logan (Observer and Strategy)
+ * @date 2026-10-28
+ * @ingroup StrategyPattern
+ */
 #include "RoleBasedAssignment.h"
-#include "WorkItem.h"      // Person 2: assignTo(Participant*)
-#include "Participant.h"   // Person 4: getRole()
+#include "WorkItem.h"
+#include "Participant.h"
 
 RoleBasedAssignment::RoleBasedAssignment(const std::vector<Participant*>& c, const std::string& role)
     : AssignmentStrategy(c), requiredRole(role) {}
 
-void RoleBasedAssignment::route(WorkItem* item) {
-    if (!item) return;
+bool RoleBasedAssignment::route(WorkItem* item) {
+    if (!item) return false;
     for (std::size_t i = 0; i < candidates.size(); ++i) {
         if (candidates[i] && candidates[i]->getRole() == requiredRole) {
-            item->assignTo(candidates[i]);
-            return;
+            return item->assignTo(candidates[i]);
         }
     }
+    return false;
 }
