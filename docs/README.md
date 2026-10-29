@@ -4,4 +4,5 @@
  TIVIDY Diagrams:
  <br>
  
+ View our [Class Diagram](CLASS DIAGRAM FINAL.jpg)
  
