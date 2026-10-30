@@ -31,7 +31,7 @@ private:
     std::string role;
     /// @brief The maximum amount this handler can approve
     double limit;
-    bool tryDecide(ApprovalRequest &request);
+    bool tryDecide(ApprovalRequest &request) override;
     
 };
 

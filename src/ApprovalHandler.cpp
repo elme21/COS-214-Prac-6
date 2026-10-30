@@ -3,7 +3,7 @@
 
 void ApprovalHandler::handleRequest(ApprovalRequest& request)
 {
-    request.addVisited(name);
+    request.addVisited(ApprovalHandler::name);
 
     if (tryDecide(request))
     {
