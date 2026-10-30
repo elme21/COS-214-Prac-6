@@ -2,6 +2,7 @@
 #define APPROVAL_HANDLER_H
 
 class ApprovalRequest;
+#include <string>
 
 /// @brief The ApprovalHandler class is the Handler of the chain of responsibility pattern
 class ApprovalHandler
