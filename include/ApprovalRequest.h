@@ -1,6 +1,7 @@
 #ifndef APPROVALREQUEST_H
 #define APPROVALREQUEST_H
 
+#include <string>
 #include <vector>
 #include "WorkComponent.h"
 

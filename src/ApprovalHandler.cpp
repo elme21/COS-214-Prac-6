@@ -15,6 +15,6 @@ void ApprovalHandler::handleRequest(ApprovalRequest& request)
     }
     else
     {
-        request.setDecision(ApprovalRequest::Unhandled, name);   // chain ended with no decision
+        request.setDecision(ApprovalRequest::Unhandled, name);
     }
 }
