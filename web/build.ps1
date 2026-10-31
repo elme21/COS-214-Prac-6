@@ -16,20 +16,12 @@ $Exe     = Join-Path $Build 'tividy-web.exe'
 if ($Clean -and (Test-Path $Build)) { Remove-Item -Recurse -Force $Build }
 New-Item -ItemType Directory -Force $Obj | Out-Null
 
-# Engine files left out of the build, and why (see web/INTEGRATION.md). Remove a line once it is fixed.
-$ExcludedEngineFiles = [ordered]@{
-    'TaskRouter.cpp'          = 'does not compile: defines bool route(), TaskRouter.h declares void route() (Member 6)'
-    'RoleBasedAssignment.cpp' = 'does not compile: bool route() overrides void AssignmentStrategy::route() (Member 6)'
-    'RuleBasedAssignment.cpp' = 'does not compile: bool route() overrides void AssignmentStrategy::route() (Member 6)'
-    'WorkloadAssignment.cpp'  = 'does not compile: defines bool route(), the header declares void route() (Member 6)'
-    'WorkflowManager.cpp'     = 'compiles, but cannot link without TaskRouter (Member 7 / Member 6)'
-}
+# Engine files left out of the build, and why (see web/INTEGRATION.md). Every engine file builds
+# today, so the list is empty; add a line here if a teammate's file ever stops compiling.
+$ExcludedEngineFiles = [ordered]@{}
 
-# Per-file extra flags for engine files. ApproveCommand.h uses WorkComponent / WorkItemState /
-# Participant without declaring them (Member 5); force-including WorkComponent.h declares them.
-$EngineFileFlags = @{
-    'ApproveCommand.cpp' = @('-include', 'WorkComponent.h')
-}
+# Per-file extra flags for engine files (none needed today).
+$EngineFileFlags = @{}
 
 $engine    = Get-ChildItem (Join-Path $Project 'src') -Filter *.cpp | Where-Object { -not $ExcludedEngineFiles.Contains($_.Name) }
 $scenarios = (Get-ChildItem (Join-Path $Web 'scenarios') -Filter *.cpp).FullName

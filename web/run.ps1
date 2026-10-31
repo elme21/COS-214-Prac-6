@@ -15,4 +15,5 @@ if (-not $NoBrowser) {
     # Opens the page shortly after the server starts listening.
     Start-Job -ScriptBlock { param($u) Start-Sleep -Seconds 1; Start-Process $u } -ArgumentList "http://localhost:$Port/" | Out-Null
 }
-& $Exe --public (Join-Path $Web 'public') --port $Port
+# Every web/templates/*.json is loaded as a scenario at startup.
+& $Exe --public (Join-Path $Web 'public') --templates (Join-Path $Web 'templates') --port $Port
