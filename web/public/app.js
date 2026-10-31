@@ -21,7 +21,7 @@ const ACTIONS = [
 // working = real engine classes run; partial = real classes run with a known gap;
 // missing = cannot be used by the GUI.
 const PATTERNS = [
-  ['Facade', 'WorkflowManager', 'missing', 'Compiles and links, but keeps every instance\'s tree, mediator and command history private, so no GUI can show or act on its tasks. EngineGateway mirrors its interface and does the same steps with the real classes.'],
+  ['Facade', 'WorkflowManager', 'missing', 'Not used by the GUI. WorkflowManager keeps every instance\'s tree, mediator and command history private, so a case it creates cannot be shown or acted on, and its complete() needs an InProgress task that no Facade operation can produce. EngineGateway mirrors its interface and does the same steps with the real classes.'],
   ['Builder', 'DefinitionBuilder, CodeDefinitionBuilder (+ GenericDirector)', 'working', 'Every scenario - template or new - is built by one GenericDirector on the real CodeDefinitionBuilder: stages, nested sub-stages, tasks, dependencies, chains, strategies and decorators.'],
   ['Prototype', 'WorkComponent::clone, WorkflowDefinition::cloneRoot, DefinitionRegistry', 'working', 'Every definition sits in the real DefinitionRegistry; every instance is a deep clone of one.'],
   ['Composite', 'WorkComponent, WorkStage, WorkItem', 'working', 'Stages with nested sub-stages and tasks, walked through getChild().'],
@@ -30,7 +30,7 @@ const PATTERNS = [
   ['Template Method', 'WorkItem::execute + ManualTask / AutomatedTask / ApprovalTask::perform', 'working', 'execute runs the real skeleton. Automated steps succeed or fail per the spec (setStepSucceeds).'],
   ['State', 'WorkItemState + 8 concrete states', 'working', 'Every refusal you see comes from a state returning false.'],
   ['Command', 'WorkflowCommand, CommandProcessor + 8 concrete commands', 'working', 'Every action runs a real command; Undo pops getHistory(). A command\'s undo restores only its own task.'],
-  ['Memento', 'WorkflowInstance, InstanceSnapshot, SnapshotHistory', 'partial', 'Snapshot / Restore use the real classes. InstanceSnapshot does not save instance data, so the gateway keeps a copy.'],
+  ['Memento', 'WorkflowInstance, InstanceSnapshot, SnapshotHistory', 'working', 'Snapshot / Restore use the real classes; the snapshot saves the status, the case data and a deep clone of the tree.'],
   ['Mediator', 'WorkCoordinator, ResourceCoordinator, Colleague, Participant, Resource', 'working', 'Dependencies and live resource contention: requestResource() takes a place, release() gives it back.'],
   ['Chain of Responsibility', 'ApprovalHandler, RoleApproverHandler, FinalApproverHandler, ApprovalRequest', 'working', 'Generic levels built from the spec; the real handlers decide. The path, decider and outcome are read from the result ApprovalTask keeps (getChainPath, getChainDecidedBy, getChainOutcome).'],
   ['Observer', 'WorkflowEventBus, DependencyActivator, AuditLogger, NotificationSender, MonitoringCollector', 'working', 'Each instance has its own bus; DependencyActivator unlocks dependants; the audit trail is AuditLogger::getLog(). EngineGateway publishes the events.'],
@@ -54,9 +54,8 @@ const GENERIC_CLASSES = [
 const TEMPORARY = [
   ['server/EngineGateway (internals)', 'WorkflowManager (Facade): it has no accessors for an instance\'s tasks', 'Member 7'],
   ['scenarios/TaskLookup', 'finding a task by ID in an instance (kept private in WorkflowManager)', 'Member 7'],
-  ['scenarios/StageNames', 'a name on WorkStage', 'Member 1'],
+  ['scenarios/StageNames', 'a name on WorkStage (it declares one, but nothing can set or read it)', 'Member 1'],
   ['EngineGateway::syncWorkload', 'updating Participant workload (no engine class calls itemAssigned)', 'Members 4 / 6'],
-  ['case-data copy beside each snapshot', 'InstanceSnapshot saving WorkflowInstance data', 'Member 5'],
 ];
 
 const ui = {
@@ -290,10 +289,9 @@ function focusSelector(el) {
   if (d.edList !== undefined) return attr('data-ed-list', d.edList) + attr('value', el.value);
   if (d.edFlag !== undefined) return attr('data-ed-flag', d.edFlag);
   if (d.edBool !== undefined) return attr('data-ed-bool', d.edBool);
-  if (d.act && (d.key || (d.key !== undefined && /^(wiz-|ed-)/.test(d.act)))) return attr('data-act', d.act) + attr('data-key', d.key);
   if (d.edAct !== undefined) return attr('data-ed-act', d.edAct) + attr('data-path', d.path) + (d.i !== undefined ? attr('data-i', d.i) : '');
-  // Wizard only: its buttons, collapsed-section headers and step heading.
-  if (d.act && /^(wiz-|ed-)/.test(d.act)) return attr('data-act', d.act);
+  // Any other control with data-act (task rows, action buttons, wizard buttons): match all its data-* attributes.
+  if (d.act) return Object.keys(d).map((k) => attr('data-' + k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()), d[k])).join('');
   if (el.tagName === 'SUMMARY' && el.parentElement && el.parentElement.dataset.openKey !== undefined) {
     return attr('data-open-key', el.parentElement.dataset.openKey) + ' > summary';
   }

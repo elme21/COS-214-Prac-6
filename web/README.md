@@ -18,12 +18,14 @@ the engine through one class, `EngineGateway`.
 Everything runs **offline**: no CDNs, fonts or downloads. All state is in memory: restarting the server
 (or **Reset demo**) removes custom scenarios and reloads the templates.
 
-## Requirements
+## Dependencies
 
 - Windows with **Windows PowerShell 5.1**.
 - **MSYS2 UCRT64 g++** (tested with g++ 14.2.0) on `PATH`, e.g. `C:\msys64\ucrt64\bin`.
   Build from PowerShell, not Git Bash.
 - A browser.
+- Nothing to download: the two header-only libraries the server uses are vendored in `web/third_party/`
+  (see the end of this file).
 
 ## Build and run
 
@@ -40,8 +42,8 @@ Options: `-Rebuild`, `-NoBrowser`, `-Port 8081`.
 
 `build.ps1` builds only (incremental; add `-Clean` for a full rebuild). It needs only `include/`, `src/`
 and `web/`. All paths are relative to the script's folder, and the output goes to `web\build\`
-(git-ignored). Every engine file compiles; the build has zero warnings. The first build takes about a
-minute (`httplib.h` is large).
+(git-ignored). Every engine file compiles with `-std=c++11 -Wall -Wextra`, and the build has zero
+warnings; any compiler message is printed. The first build takes about a minute (`httplib.h` is large).
 
 If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope Process Bypass`.
 
@@ -154,7 +156,7 @@ web/
 
 | Method | Path | Body / notes |
 |---|---|---|
-| GET | `/api/templates` | template specs (for "Start from") |
+| GET | `/api/templates` | template specs (for the wizard's "Use a template") |
 | GET | `/api/scenarios` | every scenario: inputs, people, resources, chains, decisions, seeds, definition tree, spec |
 | POST | `/api/scenarios/validate` | a spec, returns `{ok, errors[]}` |
 | POST | `/api/scenarios` | a spec, builds and registers it (400 with `errors[]` if invalid) |
@@ -166,6 +168,11 @@ web/
 | GET | `/api/resources/{scenario}` | resources: capacity, free places, holders |
 
 Actions: `makeAvailable, assign, autoAssign, start, execute, complete, approve, reject, cancel, escalate`.
+
+Errors always come back as JSON `{ "ok": false, "message": "...", "errors": [...] }`: 400 for a body
+that is not valid JSON or not a JSON object, an invalid spec or an unknown action; 404 for an unknown
+scenario, instance, task or endpoint. A refused engine action is not an error: it returns 200 with
+`"ok": false` and the engine's reason.
 
 ## 10-minute demo script
 
@@ -185,12 +192,12 @@ Press **Reset demo** first. Keep *Patterns in action* visible and point at the g
 4. **2:15** *Approve or Reject Application* (nested sub-stage *Admission decision*, **AuditDecorator**
    tag): assign, start (point at the audit line), **execute**. Risk 15 stops at **Approver level 1**.
    Notify: the instance is Finished and EDU-2 is unchanged (isolation line). Open the audit trail.
-5. **3:00** Exception: seed **Aisha** (Cambridge). *Verify Results* shows "automated step will fail".
-   **execute** leaves it InProgress (amber), then escalate, reassign and complete by hand. Show
-   **Undo** (one command) and **Snapshot / Restore**.
+5. **3:00** Exception: example case **Aisha** (Cambridge). *Verify Results* shows "automated step will
+   fail". **execute** leaves it InProgress (amber), then escalate, reassign and complete by hand. Show
+   **Undo** (one command) and **Snapshot / Restore** (status, case data and tree come back).
 
 **Patient booking (about 3.5 minutes)**
-6. **3:30** Tab *Patient booking*: seeds **Johan** and **Mandla**, side by side. For each: Register,
+6. **3:30** Tab *Patient booking*: example cases **Johan** and **Mandla**, side by side. For each: Register,
    Verify Medical Aid (execute), Triage. On completing Triage, the **Triage outcome** selector is a
    runtime decision: choose **Routine**, and the emergency branch is cancelled with real commands.
 7. **4:45** **Live contention.** Assign Johan's *Book Appointment Slot* to **Dr van der Merwe**: granted,
@@ -199,7 +206,7 @@ Press **Reset demo** first. Keep *Patterns in action* visible and point at the g
 8. **5:45** Johan: complete the booking, reminder and GP consultation (the slot is released). Then
    **execute** the referral: R450 stops at **Approver level 1**. Mandla: **cancel** the GP consultation
    (no-show): follow-ups are cancelled and the slot is released.
-9. **6:30** Seed **Lerato**: at Triage the suggestion is **Urgent**. Complete, and the booking branch is
+9. **6:30** Example case **Lerato**: at Triage the suggestion is **Urgent**. Complete, and the booking branch is
    cancelled; she goes straight to the doctor on duty.
 
 **A new industry, live (about 2 minutes)**

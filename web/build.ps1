@@ -48,8 +48,11 @@ function Compile($source, $group, $extra) {
         if ($objTime -gt (Get-Item $source).LastWriteTime -and $objTime -gt $newestHeader) { return $object }
     }
     Write-Host "  compiling $group/$name.cpp"
-    & g++ @common @extra @includes -c $source -o $object
-    if ($LASTEXITCODE -ne 0) { throw "Compile failed: $source" }
+    # Capture the compiler's messages and print them, so warnings and errors are always visible.
+    $messages = & g++ @common @extra @includes -c $source -o $object 2>&1
+    $code = $LASTEXITCODE
+    foreach ($m in $messages) { Write-Host "$m" }
+    if ($code -ne 0) { throw "Compile failed: $source" }
     return $object
 }
 
@@ -65,6 +68,8 @@ foreach ($f in $scenarios) { $objects += Compile $f 'scenarios' @() }
 foreach ($f in $server)    { $objects += Compile $f 'server' @() }
 
 Write-Host '  linking build\tividy-web.exe'
-& g++ -std=c++11 @objects -o $Exe -static -lws2_32
-if ($LASTEXITCODE -ne 0) { throw 'Link failed' }
+$messages = & g++ -std=c++11 @objects -o $Exe -static -lws2_32 2>&1
+$code = $LASTEXITCODE
+foreach ($m in $messages) { Write-Host "$m" }
+if ($code -ne 0) { throw 'Link failed' }
 Write-Host "Done: $Exe"

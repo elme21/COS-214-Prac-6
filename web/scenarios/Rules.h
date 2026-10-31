@@ -6,19 +6,37 @@
 #include <string>
 
 /**
- * Evaluates one condition from a spec on an instance's input data. Numbers are compared as
- * numbers when both sides parse as numbers, otherwise as text. Used for decision rules and
- * automated-step success rules; industry rules are data, not code.
+ * @file Rules.h
+ * @brief Evaluates the rules written in a scenario spec. Industry rules are data, not code.
+ */
+
+/**
+ * @brief Evaluates one condition from a spec on an instance's case data.
+ *
+ * Numbers are compared as numbers when both sides parse as numbers, otherwise as text. Used for
+ * decision rules and automated-step success rules.
+ * @param rule the condition
+ * @param data the case data
+ * @return true if the condition holds
  */
 bool ruleHolds(const RuleSpec& rule, const CaseData& data);
 
-/** "field op value" for display, e.g. "claimValue > 50000". */
+/// @brief Writes a rule for display.
+/// @param rule the condition
+/// @return "field op value", e.g. "claimValue > 50000"
 std::string describeRule(const RuleSpec& rule);
 
-/** Replaces each {field} in text with the input value of that field. */
+/// @brief Replaces each {field} in a text with that field's value from the case data.
+/// @param text the text, e.g. "Paid R{claimValue}"
+/// @param data the case data
+/// @return the filled-in text
 std::string fillTemplate(const std::string& text, const CaseData& data);
 
-/** The branch a decision's rules choose for this data (its default branch if none matches). */
+/// @brief Chooses a decision's branch from its rules.
+/// @param decision the decision
+/// @param data the case data
+/// @param reason receives which rule matched, or that the default was used
+/// @return the branch id of the first matching rule, or the default branch if none matches
 std::string branchByRules(const DecisionSpec& decision, const CaseData& data, std::string& reason);
 
 #endif
