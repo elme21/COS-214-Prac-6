@@ -16,7 +16,8 @@ public:
     /// @param request The approval request to decide on.
     /// @return true if the request was handled, false otherwise.
     bool tryDecide(ApprovalRequest& request) override;
-    
+    /// @brief Gets the highest value this handler may approve
+    double getLimit() const { return limit; }
 private:
     /// @brief The maximum amount this handler can approve.
     double limit;

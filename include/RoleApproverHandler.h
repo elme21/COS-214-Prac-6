@@ -15,7 +15,10 @@ public:
     /// @param next the next handler in the chain
     RoleApproverHandler(const std::string& name, const std::string& role, double limit, ApprovalHandler* next = nullptr)
         : ApprovalHandler(name, next), role(role), limit(limit) {}
-
+    /// @brief Gets the role this handler represents
+    const std::string& getRole() const { return role; }
+    /// @brief Gets the highest value this handler may approve
+    double getLimit() const { return limit; }
 private:
     /// @brief The role that this handler is responsible for approving
     std::string role;

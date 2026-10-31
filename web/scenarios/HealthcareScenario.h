@@ -2,7 +2,8 @@
 #define WEB_HEALTHCARESCENARIO_H
 
 #include "Scenario.h"
-#include "ChainTrace.h"
+#include "RoleApproverHandler.h"
+#include "FinalApproverHandler.h"
 
 #include <memory>
 
@@ -39,10 +40,10 @@ public:
 
 private:
     // Referral chain: Nurse -> GP -> Specialist (RoleApproverHandler) -> clinical manager (Final).
-    std::unique_ptr<TracingFinalApproverHandler> clinicalManager;
-    std::unique_ptr<TracingRoleApproverHandler> specialist;
-    std::unique_ptr<TracingRoleApproverHandler> gp;
-    std::unique_ptr<TracingRoleApproverHandler> nurse;
+    std::unique_ptr<FinalApproverHandler> clinicalManager;
+    std::unique_ptr<RoleApproverHandler> specialist;
+    std::unique_ptr<RoleApproverHandler> gp;
+    std::unique_ptr<RoleApproverHandler> nurse;
 };
 
 #endif

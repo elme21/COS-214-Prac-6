@@ -5,6 +5,7 @@
 #include "Staff.h"
 #include "Trace.h"
 
+
 #include "AutomatedTask.h"
 #include "ApprovalTask.h"
 #include "WorkItem.h"
@@ -12,10 +13,10 @@
 #include <cstdlib>
 
 HealthcareScenario::HealthcareScenario()
-    : clinicalManager(new TracingFinalApproverHandler("Clinical manager (scheme limit)", 25000)),
-      specialist(new TracingRoleApproverHandler("Specialist", 12000, clinicalManager.get())),
-      gp(new TracingRoleApproverHandler("GP", 2500, specialist.get())),
-      nurse(new TracingRoleApproverHandler("Nurse", 500, gp.get())) {}
+    : clinicalManager(new FinalApproverHandler("Clinical manager (scheme limit)", 25000)),
+      specialist(new RoleApproverHandler("Specialist", "Specialist", 12000, clinicalManager.get())),
+      gp(new RoleApproverHandler("GP", "GP", 2500, specialist.get())),
+      nurse(new RoleApproverHandler("Nurse", "Nurse", 500, gp.get())) {}
 
 std::string HealthcareScenario::description() const {
     return "Reception registers the patient and the medical aid is checked automatically; a nurse triages. "
@@ -136,7 +137,7 @@ std::vector<ChainLink> HealthcareScenario::chain() const {
     ChainLink a = { nurse->getRole(), nurse->getLimit(), false };
     ChainLink b = { gp->getRole(), gp->getLimit(), false };
     ChainLink c = { specialist->getRole(), specialist->getLimit(), false };
-    ChainLink d = { clinicalManager->getRole(), clinicalManager->getLimit(), true };
+    ChainLink d = { clinicalManager->getName(), clinicalManager->getLimit(), true };
     links.push_back(a);
     links.push_back(b);
     links.push_back(c);

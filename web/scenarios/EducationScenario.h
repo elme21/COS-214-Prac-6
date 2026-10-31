@@ -2,7 +2,8 @@
 #define WEB_EDUCATIONSCENARIO_H
 
 #include "Scenario.h"
-#include "ChainTrace.h"
+#include "RoleApproverHandler.h"
+#include "FinalApproverHandler.h"
 
 #include <memory>
 
@@ -38,9 +39,9 @@ public:
 
 private:
     // Approval chain for ApplicationDecision: faculty reviewer -> HOD -> registrar.
-    std::unique_ptr<TracingFinalApproverHandler> registrar;
-    std::unique_ptr<TracingRoleApproverHandler> hod;
-    std::unique_ptr<TracingRoleApproverHandler> facultyReviewer;
+    std::unique_ptr<FinalApproverHandler> registrar;
+    std::unique_ptr<RoleApproverHandler> hod;
+    std::unique_ptr<RoleApproverHandler> facultyReviewer;
 };
 
 #endif

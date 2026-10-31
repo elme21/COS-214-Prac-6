@@ -4,6 +4,7 @@
 #include "Staff.h"
 #include "Trace.h"
 
+
 #include "DefinitionBuilder.h"
 #include "EnrolmentDirector.h"
 #include "AutomatedTask.h"
@@ -13,9 +14,10 @@
 #include <cstdlib>
 
 EducationScenario::EducationScenario()
-    : registrar(new TracingFinalApproverHandler("Registrar", 85)),
-      hod(new TracingRoleApproverHandler("Head of Department", 60, registrar.get())),
-      facultyReviewer(new TracingRoleApproverHandler("Faculty reviewer", 30, hod.get())) {}
+    : registrar(new FinalApproverHandler("Registrar", 85)),
+      hod(new RoleApproverHandler("Head of Department", "Head of Department", 60, registrar.get())),
+      facultyReviewer(new RoleApproverHandler("Faculty reviewer", "Faculty reviewer", 30, hod.get())) {}
+
 
 std::string EducationScenario::description() const {
     return "Applicants submit documents; admissions checks them (looping back while documents are "
@@ -122,7 +124,7 @@ std::vector<ChainLink> EducationScenario::chain() const {
     std::vector<ChainLink> links;
     ChainLink a = { facultyReviewer->getRole(), facultyReviewer->getLimit(), false };
     ChainLink b = { hod->getRole(), hod->getLimit(), false };
-    ChainLink c = { registrar->getRole(), registrar->getLimit(), true };
+    ChainLink c = { registrar->getName(), registrar->getLimit(), true };
     links.push_back(a);
     links.push_back(b);
     links.push_back(c);
