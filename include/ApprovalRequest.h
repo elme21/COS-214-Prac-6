@@ -15,7 +15,7 @@ public:
     enum Outcome { Pending, Approved, Rejected, Unhandled };
 
     /// @brief The constructor
-    /// @param item The work item requesting to enter the chain
+    /// @param target The work item requesting to enter the chain
     /// @param value The amount requesting approval
     ApprovalRequest(WorkComponent* target, double value = 0.0)
         : target(target), value(value), outcome(Pending) {}
