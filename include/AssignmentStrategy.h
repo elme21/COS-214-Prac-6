@@ -31,7 +31,7 @@ class Participant;   // Person 4
  * No existing class changes.
  *
  * @invariant Strategies never own the participants or the item.
- * @ingroup StrategyPattern
+ * 
  * @see TaskRouter, RoleBasedAssignment, WorkloadAssignment, RuleBasedAssignment
  */
 class AssignmentStrategy {
