@@ -1,43 +1,60 @@
 # Integration status: what is real, what is still a stand-in
 
-The web demo must call the real C++ engine, never a hard-coded copy of it. After the team merged
-all patterns into main, almost everything in `web/` now runs on the real engine classes. A few
-small **temporary stand-ins** remain where a teammate's class does not compile, does not link, or
-lacks an accessor. Each one uses **only real engine methods**. None of them reimplements state
-transitions, cloning, dependency checks, slot counting or approval decisions.
+The web demo calls the real C++ engine; it never contains a hard-coded copy of it. The engine code in
+`include/` and `src/` is final. Every one of its 57 source files compiles and links with
+`-std=c++11 -Wall -Wextra` and **zero warnings**. `build.ps1` skips no engine file and needs no
+special flags.
 
-Every stand-in file starts with:
+The GUI is **fully generic**:
+- Every scenario is a JSON **spec**: one of the files in `web/templates/`, or one created in the editor.
+- One `GenericDirector` turns any spec into a definition with the real `CodeDefinitionBuilder`, and
+  registers it in the real `DefinitionRegistry`.
+- Nothing in `web/server`, `web/scenarios` or `web/public` mentions an industry.
+
+A few small **temporary stand-ins** remain where an engine class is missing an accessor. Each one
+uses **only real engine methods**: no stand-in reimplements state transitions, cloning, dependency
+checks, resource counting, approval decisions or assignment rules. Every stand-in file starts with:
 
 ```
 // TEMPORARY - stands in for <class> (Member N) until <specific fix>. Delete when that lands.
 ```
 
 In the UI, a step done by a stand-in is labelled **"(temporary web stand-in)"** in the
-*Patterns in action* panel. A pattern that does not build is labelled **"not yet integrated"**.
+*Patterns in action* panel, and the unusable Facade is labelled **"not used by the GUI"**.
 
 Members: 1 Composite + Iterator, 2 State + Template Method, 3 Decorator + Prototype,
 4 Mediator + Chain, 5 Command + Memento, 6 Observer + Strategy, 7 Builder + Facade.
-The Adapter pattern was removed by team decision. Automated tasks are automated steps
-(`AutomatedTask::setStepSucceeds`).
-
-All engine access goes through **one class, `web/server/EngineGateway`**. Its public methods mirror
-`WorkflowManager`. `main.cpp` and the browser never touch the engine directly.
 
 ---
 
-## Now real (stand-in deleted)
+## Real engine classes the GUI uses
 
-| Pattern | Real classes used by the web demo | Stand-in removed |
+| Pattern | Real classes | How the GUI uses them |
 |---|---|---|
-| Builder | `CodeDefinitionBuilder` (`addStage`, `addTask`, `addDependency`, `setApprovalChain`, `addDecorator`), `EnrolmentDirector`, `HealthcareDirector` | `RecordingDefinitionBuilder` |
-| Prototype | `DefinitionRegistry` (both definitions), `WorkflowDefinition::cloneRoot`, `getDependencies` | definition kept in the gateway |
-| Composite / Iterator | `WorkStage`, `DepthFirstIterator`, `ReadyTaskIterator` ("Available work") | own available-work filter |
-| Decorator | `AuditDecorator` on one task per industry, applied by `addDecorator("audit")` | - (was not integrated) |
-| Command | `CommandProcessor` (+ `getHistory()`), `MakeAvailable/Assign/Start/Complete/Approve/Reject/Cancel/EscalateCommand` | `WebCommands`, `HistoryLog` |
-| Memento | `WorkflowInstance::createSnapshot/restoreSnapshot`, `getData/setData`, `SnapshotHistory` | - |
-| Mediator | `ResourceCoordinator` (one per instance), `Resource` with real places (`take`/`giveBack`), `Participant(id, name, role)` | `ParticipantDirectory` |
-| Observer | `WorkflowEventBus` (one per instance), `DependencyActivator`, `AuditLogger`, `NotificationSender`, `MonitoringCollector` | the Observer half of `PendingIntegration` |
-| Adapter | removed from the project | `TestConnectors`, `temporary_stubs/` |
+| Builder | `DefinitionBuilder`, `CodeDefinitionBuilder` | `GenericDirector` (web/scenarios) calls `addStage`, `addTask`, `addDependency`, `setApprovalChain`, `setAssignmentStrategy` and `addDecorator` for any spec. `EnrolmentDirector` is **no longer used**: its definition is now the `university-admission.json` template. |
+| Prototype | `DefinitionRegistry`, `WorkflowDefinition::cloneRoot`, `WorkComponent::clone` | Every definition is registered; every instance is a deep clone. |
+| Composite | `WorkStage`, `WorkItem` | Stages with nested sub-stages and tasks. |
+| Iterator | `DepthFirstIterator`, `ReadyTaskIterator` | "Available work" is `ReadyTaskIterator`. |
+| Decorator | `WorkComponentDecorator`, `AuditDecorator` | Tasks marked `"decorators": ["audit"]` are wrapped by `addDecorator`. |
+| Template Method | `WorkItem::execute`, `ManualTask`, `AutomatedTask`, `ApprovalTask` | `execute`; automated steps succeed or fail via `setStepSucceeds` (from the spec's rule). |
+| State | `WorkItemState` + 8 states | Every refusal comes from a state. |
+| Command | `CommandProcessor` (+ `getHistory()`), the 8 concrete commands | Every action and every rule-driven cancel or unlock is a real command; Undo pops it. |
+| Memento | `WorkflowInstance`, `InstanceSnapshot`, `SnapshotHistory` | Snapshot / Restore. Case data is stored with `WorkflowInstance::setData`. |
+| Mediator | `ResourceCoordinator`, `Participant`, `Resource` | Dependencies per instance; live resource contention (`take`/`giveBack`). |
+| Chain of Responsibility | `ApprovalHandler`, `RoleApproverHandler`, `FinalApproverHandler`, `ApprovalRequest` | One chain per approval task, with generic levels from the spec: "Approver level 1..N", "Final approver". |
+| Observer | `WorkflowEventBus`, `DependencyActivator`, `AuditLogger`, `NotificationSender`, `MonitoringCollector` | One bus per instance; dependants are unlocked by `DependencyActivator`; the audit trail is `AuditLogger::getLog()`. |
+| Strategy | `TaskRouter`, `RoleBasedAssignment`, `WorkloadAssignment` | "auto-assign" routes a task with the strategy its spec names; manual assign is always available. |
+
+## Stand-ins removed this round
+
+| Removed | Because |
+|---|---|
+| `server/PendingIntegration` (Strategy hook) | The Strategy classes now compile: `route()` is `bool` everywhere |
+| `scenarios/ChainTrace` (tracing handler subclasses) | `handleRequest` is no longer virtual; it was first replaced by the smaller `ChainProbe` |
+| `scenarios/ChainProbe` (pass-through links that reported the path) | `ApprovalTask` (Member 2) now keeps the result of its last chain run as plain data: `getChainPath()`, `getChainOutcome()`, `getChainDecidedBy()`, `wasChainDecided()`, `wasChainApproved()`, `hasChainResult()`. The gateway reads these after `execute()`, and the task JSON carries them as `chainResult` |
+| `scenarios/StageNameRecorder` | Replaced by `StageNames`, which works for any spec |
+| `scenarios/EducationScenario`, `HealthcareScenario`, `HealthcareDirector`, `RuleHelpers`, `Staff`, `Scenario.h` | Industry code is now data: `web/templates/*.json` + `GenericDirector` + `ScenarioRuntime` |
+| `build.ps1` exclusions and `-include WorkComponent.h` | Every engine file now builds as-is |
 
 ---
 
@@ -45,96 +62,52 @@ All engine access goes through **one class, `web/server/EngineGateway`**. Its pu
 
 ### 1. `server/EngineGateway` internals: stand in for `WorkflowManager` (Facade, Member 7)
 
-**Why it can't be used:**
-- `src/WorkflowManager.cpp` compiles, but it **cannot link**: it calls `TaskRouter::setStrategy` and
-  `TaskRouter::route`, and `TaskRouter.cpp` does not compile (see Strategy below).
-- Even if it linked, the GUI could not use it. Its `Runtime` (instance, mediator, command
-  processor, components) is private, and it has no way to read an instance's tree or tasks. It also
-  offers no assign, start, approve, reject, cancel, escalate, execute, undo or snapshot operations.
-- `WorkflowManager` publishes no events, so it could not drive the Observer listeners either.
+**Why the Facade cannot be used by a GUI:** `WorkflowManager` now compiles and links, but:
+- `createInstance()` returns only an id. The instance's tree, mediator and command processor live in
+  a private `Runtime`, and there is no accessor, so the GUI cannot show the tasks or act on them.
+- The facade only offers `complete()`. There is no assign, start, approve, reject, cancel, escalate,
+  execute, undo, snapshot or restore.
+- It publishes no events, so the Observer listeners would never run.
 
 **What the gateway does instead:** the same steps as `WorkflowManager::createInstance/start/complete`,
-using the same real classes:
+with the same real classes:
 - clone from `DefinitionRegistry`;
 - create a per-instance `ResourceCoordinator` and `CommandProcessor`;
-- wire dependencies from `getDependencies()`;
-- run the real commands.
+- add dependencies from `getDependencies()`;
+- run the real commands;
+- route with the real `TaskRouter`;
+- publish `Event`s on the instance's `WorkflowEventBus`.
 
-It also publishes `Event`s on the instance's `WorkflowEventBus`, so the real listeners react.
-
-**Swap when the Facade can be used:**
-1. Fix Strategy so `WorkflowManager.cpp` links; remove it from `$ExcludedEngineFiles` in `build.ps1`.
-2. Add accessors to `WorkflowManager`, e.g. `WorkflowInstance* getInstance(id)`,
-   `WorkComponent* getTask(instanceId, taskId)`, `CommandProcessor* getCommands(id)` and
-   `WorkflowEventBus* getEvents(id)`. Or add the missing operations: assign, start, approve, reject,
-   cancel, escalate, execute, undo, snapshot, restore.
-3. Make `EngineGateway` hold a `WorkflowManager` and call it from `createInstance/start/complete/getStatus`
-   and the new operations. `main.cpp` and `public/` stay unchanged.
+**Swap:** add accessors to `WorkflowManager` (e.g. `WorkflowInstance* getInstance(id)`,
+`WorkComponent* getTask(instanceId, taskId)`, `CommandProcessor* getCommands(id)`,
+`WorkflowEventBus* getEvents(id)`), or add the missing operations. Then make `EngineGateway` hold a
+`WorkflowManager` and call it. `main.cpp` and `public/` stay unchanged.
 
 ### 2. `scenarios/TaskLookup`: stands in for task lookup by ID (Member 7)
 
-**Why:** `WorkflowManager` keeps its `components` / `items` maps private, and `WorkComponent` has no
-`getId()`. TaskLookup walks the tree with `createIterator()`, unwrapping decorators with the real
-`WorkComponentDecorator::getWrappedComponent()`, exactly as `WorkflowManager::createInstance` does.
-It returns the outermost node (commands act on it, so decorator hooks run) and the inner `WorkItem`
-(identity, `isComplete`, events).
+`WorkflowManager` keeps its `components` / `items` maps private, and `WorkComponent` has no `getId()`.
+TaskLookup walks the tree with `createIterator()` and unwraps decorators with the real
+`getWrappedComponent()`, exactly as `WorkflowManager::createInstance` does internally.
+**Swap:** use the Facade's lookup once it exists (see 1).
 
-**Swap:** use the Facade's task lookup once it exists (see 1), then delete `TaskLookup.h/.cpp`.
+### 3. `scenarios/StageNames`: stands in for a name on `WorkStage` (Member 1)
 
-### 3. `scenarios/StageNameRecorder`: stands in for a name on `WorkStage` (Member 1)
+`CodeDefinitionBuilder::addStage(name, parent)` creates an unnamed `WorkStage`. StageNames matches each
+built stage to the spec stage with the same depth and the same set of tasks beneath it. This stays
+correct even though `addDecorator` moves a decorated task to the end of its stage.
+**Swap:** when `WorkStage` stores its name, read it in `EngineGateway::treeNode` and delete StageNames.
 
-**Why:** `CodeDefinitionBuilder::addStage(name, parent)` creates an unnamed `WorkStage`. StageNameRecorder
-is a `DefinitionBuilder` that forwards **every** step unchanged to the real `CodeDefinitionBuilder`.
-It only notes each stage's name by tree position.
+### 4. `EngineGateway::syncWorkload`: stands in for workload updates (Members 4 / 6)
 
-**Swap:** when `WorkStage` stores its name (e.g. `getName()`), read it in `EngineGateway::treeNode`, pass the
-real `CodeDefinitionBuilder` straight to the directors, and delete `StageNameRecorder.h/.cpp`.
+`WorkloadAssignment` picks the participant with the lowest `Participant::workload()`, but no engine
+class calls `itemAssigned()` / `itemReleased()`. So the gateway calls those real methods when a task's
+holder changes (Assigned / InProgress count; anything else releases). **Swap:** when `AssignCommand`
+(or `WorkItem` / the Mediator) updates workload, delete `syncWorkload`.
 
-### 4. `scenarios/ChainTrace`: stands in for path reporting by the approval handlers (Member 4)
+### 5. Case-data copy beside each snapshot: stands in for `InstanceSnapshot` saving data (Member 5)
 
-**Why:** `RoleApproverHandler` / `FinalApproverHandler` decide correctly, but report nothing. Their role
-and limit are private, and they publish no event. `TracingRoleApproverHandler` /
-`TracingFinalApproverHandler` subclass them, report "request reached me", then call the **real**
-`handleRequest`, which decides.
-
-**Swap:** when the handlers publish an event or expose `getRole()` / `getLimit()`, use the plain handlers
-in `EducationScenario` / `HealthcareScenario` and delete `ChainTrace.h/.cpp`.
-
-### 5. `server/PendingIntegration`: stands in for `TaskRouter` / `AssignmentStrategy` (Strategy, Member 6)
-
-**Why:** none of the Strategy classes compile.
-- `include/AssignmentStrategy.h` declares `virtual void route(WorkItem*) = 0;`.
-- `include/RoleBasedAssignment.h` and `include/RuleBasedAssignment.h` declare `bool route(WorkItem*) override;`,
-  which gives *conflicting return type*.
-- `include/TaskRouter.h` and `include/WorkloadAssignment.h` declare `void route`, but
-  `src/TaskRouter.cpp` and `src/WorkloadAssignment.cpp` define `bool route`, which gives *no declaration matches*.
-
-`build.ps1` therefore skips those four files. Assignment is manual, and the Patterns panel says so.
-The builder's `setAssignmentStrategy` is real but has nothing to store.
-
-**Swap:** make `route()` agree (probably `bool` everywhere), then remove the four files from
-`$ExcludedEngineFiles`. In `EngineGateway::build()`, create one strategy per task (e.g. `RoleBasedAssignment`
-with the industry's `Participant`s) and call `CodeDefinitionBuilder::setAssignmentStrategy`. Then replace
-`PendingIntegration::chooseParticipant` with an "auto-assign" action that calls
-`TaskRouter::setStrategy(definition->getStrategy(task))` and `route(item)`, and shows the strategy's name.
-Keep the manual pick as an override, then delete `PendingIntegration.h/.cpp`.
-
-### 6. Case-data copy beside each snapshot: stands in for `InstanceSnapshot` saving instance data (Member 5)
-
-**Why:** `WorkflowInstance::createSnapshot()` saves the status and a clone of the tree, but not
-`getData()`. Restoring would keep the newer case data (urgency, decision, slot holder).
-
-**Swap:** when `InstanceSnapshot` stores the data map and `restoreSnapshot` restores it, delete
-`Instance::snapshotData` in `EngineGateway.cpp`.
-
-### 7. Build flag (approved earlier)
-
-`include/ApproveCommand.h` uses `WorkComponent`, `WorkItemState` and `Participant` without declaring
-them, so `src/ApproveCommand.cpp` does not compile on its own. `build.ps1` compiles that one file with
-`-include WorkComponent.h`, and `EngineGateway.cpp` includes `WorkComponent.h` before `ApproveCommand.h`.
-Remove the flag when the header has `class WorkComponent; class WorkItemState; class Participant;`.
-
-The earlier `-include cstddef` and `-I <project root>` flags are no longer needed and were removed.
+`WorkflowInstance::createSnapshot()` saves the status and the tree, but not `getData()`.
+**Swap:** when the snapshot stores the data map, delete `Instance::snapshotData`.
 
 ---
 
@@ -142,13 +115,14 @@ The earlier `-include cstddef` and `-I <project root>` flags are no longer neede
 
 | Behaviour | Owner | What the GUI does |
 |---|---|---|
-| A command's `undo()` restores only its own task. It does not undo branch cancellations by rules, dependants unlocked by `DependencyActivator`, or a slot taken by `requestResource` | Member 5 | Shows the real result. Each rule cancellation is its own `CancelCommand`, so it is undone separately. |
-| `CodeDefinitionBuilder::addDecorator` only knows `"audit"`; `SecureDecorator`, `ValidationDecorator` and `PriorityDecorator` need arguments it cannot pass | Members 3/7 | Uses `AuditDecorator` (one task per industry); the other three are compiled but not applied |
-| `addDecorator` removes the task and re-adds the decorator at the END of its stage, changing task order | Member 7 | Decorates only tasks that are already last in their stage |
-| `AuditDecorator`'s sink is hard-wired to `std::cout` in `CodeDefinitionBuilder` | Member 7 | The gateway captures the console and shows each audit line in the Patterns panel |
-| Approval handlers call `approve()` / `reject()` on the raw `ApprovalTask`, bypassing its decorators, so the chain's decision is not audited | Member 4 | Shown in the trace text |
-| `DefinitionRegistry::registerDefinition` takes ownership of a raw pointer, but `CodeDefinitionBuilder::getDefinition` returns a `shared_ptr` | Members 3/7 | Registers a copy (`new WorkflowDefinition(*built)`; the copy shares the prototype root) |
-| `WorkflowDefinition::keepApprovalHandler` is empty | Member 7 | Not used: the scenario owns its chain |
-| Nothing in the engine publishes events | Members 6/7 | The gateway publishes after each transition; the real listeners do the rest |
-| `DeadlineEscalator` is not wired to a clock | Member 6 | Not shown |
+| A command's `undo()` restores only its own task: unlocked dependants, cancelled branches and taken resources stay | Member 5 | Shows the real result; each rule-driven cancel is its own command, so it is undone separately |
+| `addDecorator` only knows `"audit"`; its sink is hard-wired to `std::cout` | Members 3/7 | Only "audit" is offered in specs and in the editor; the console is captured and the audit lines are shown |
+| Approval handlers call `approve()`/`reject()` on the raw `ApprovalTask`, bypassing its decorators | Member 4 | Shown in the trace |
+| `RoleApproverHandler` / `FinalApproverHandler` declare their own `name` member, which is never set, so `getDecidedBy()` is empty. Their non-virtual `handleRequest` declarations have no definition and would not link if called on the derived type | Member 4 | Not called that way. `ApprovalTask::getChainDecidedBy()` falls back to the last handler the request visited. The trace names come from the base `ApprovalHandler` name, which is set, so no web stand-in is needed |
+| `DefinitionRegistry::registerDefinition` takes a raw pointer; `getDefinition` returns a `shared_ptr` | Members 3/7 | Registers a copy (`new WorkflowDefinition(*built)`) |
+| The Mediator only supports AND dependencies (`canBecomeAvailable` needs every prerequisite complete) | Member 4 | Decisions cancel the branches not taken; a task after an either/or split cannot wait for "whichever branch ran", so each branch must finish on its own (documented in the editor) |
+| `TaskRouter` strategies call `WorkItem::assignTo` directly, not through `AssignCommand` | Member 6 | Auto-assignment is shown as not undoable |
 | `execute()` has no command | Member 5 | Called directly; labelled "not undoable" |
+| `DeadlineEscalator` is not wired to a clock | Member 6 | Not shown |
+
+None of these crash the GUI, and none are impossible to work around.
