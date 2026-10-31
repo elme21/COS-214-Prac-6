@@ -14,7 +14,7 @@ class WorkItem;
  *
  * @author Logan (Observer and Strategy)
  * @date 2026-10-28
- * @ingroup StrategyPattern
+ * 
  */
 
 class TaskRouter {
