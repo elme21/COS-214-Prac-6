@@ -6,7 +6,7 @@
  *
  * @author Logan (Observer and Strategy)
  * @date 2026-10-28
- * @ingroup StrategyPattern
+ * 
  */
 #include "WorkloadAssignment.h"
 #include "WorkItem.h"
