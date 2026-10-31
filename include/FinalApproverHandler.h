@@ -17,13 +17,7 @@ public:
     /// @return true if the request was handled, false otherwise.
     bool tryDecide(ApprovalRequest& request) override;
     
-    /// @brief Handles the approval request. If the request's value is within the limit, it approves the request. Otherwise, it denies the request.
-    /// @param request The approval request to handle.
-    void handleRequest(ApprovalRequest& request);
-
 private:
-    /// @brief The name of the handler
-    std::string name;
     /// @brief The maximum amount this handler can approve.
     double limit;
 };
