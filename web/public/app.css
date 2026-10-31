@@ -235,8 +235,6 @@ details > summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }
 .history { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .history th, .history td { text-align: left; padding: .3rem .35rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .history th { color: var(--muted); font-weight: 600; }
-.res { font-weight: 700; font-size: .75rem; }
-.res-done { color: var(--ok); } .res-refused { color: var(--bad); } .res-undone { color: var(--muted); text-decoration: line-through; } .res-info { color: var(--accent); }
 .table-wrap { overflow-x: auto; }
 
 /* ---------- patterns panel ---------- */
@@ -305,10 +303,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .ed-section { margin-bottom: 1rem; }
 .ed-section > h2 { margin-bottom: .2rem; }
 .ed-section > .note { margin-bottom: .6rem; }
-.ed-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
-.ed-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; padding: .25rem .3rem; }
-.ed-table td { padding: .2rem .3rem; vertical-align: top; }
-.ed-table td.tools { white-space: nowrap; width: 1%; }
 .icon-btn { font: inherit; font-size: .8rem; line-height: 1; padding: .3rem .45rem; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .icon-btn:hover { border-color: var(--accent); }

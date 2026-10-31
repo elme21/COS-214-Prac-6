@@ -1,6 +1,6 @@
-// TEMPORARY - stands in for task lookup by ID on WorkflowManager (Member 7) until the Facade
-// exposes an instance's tasks (its Runtime::components / Runtime::items maps are private).
-// Delete when that lands. It walks the tree the same way WorkflowManager::createInstance does.
+// TEMPORARY - stands in for task lookup by ID on WorkflowManager (Member 7). The Facade keeps each
+// instance's Runtime::components / Runtime::items maps private. Delete this when the Facade exposes
+// an instance's tasks. It walks the tree the same way WorkflowManager::createInstance does.
 #ifndef WEB_TASKLOOKUP_H
 #define WEB_TASKLOOKUP_H
 
@@ -12,29 +12,36 @@ class WorkItem;
 class AutomatedTask;
 class ApprovalTask;
 
-/**
- * One task in a tree.
- *  - node: the OUTERMOST component (a decorator if the task is decorated). Commands act on
- *          this, so decorator hooks run.
- *  - item: the WorkItem inside all decorators. Identity (getId/getName) and isComplete()
- *          come from here, and the Mediator and events need it.
- */
+/// @brief One task in a tree: the component commands act on, and the WorkItem inside it.
 struct TaskRef {
-    WorkComponent* node;
-    WorkItem* item;
-    std::vector<std::string> decorators;   // outermost first, e.g. {"AuditDecorator"}
+    WorkComponent* node;                   ///< The OUTERMOST component (a decorator if decorated); commands act on it so decorator hooks run
+    WorkItem* item;                        ///< The WorkItem inside all decorators: identity, isComplete(), Mediator and events use it
+    std::vector<std::string> decorators;   ///< Decorator class names, outermost first, e.g. {"AuditDecorator"}
 };
 
-/** Unwraps one tree node (item is null for a stage). */
+/// @brief Unwraps one tree node with WorkComponentDecorator::getWrappedComponent().
+/// @param node the node
+/// @return the task reference; item is null for a stage
 TaskRef refFor(WorkComponent* node);
 
-/** Every task in depth-first order, found with the tree's own iterator (createIterator()). */
+/// @brief Lists every task, found with the tree's own iterator (createIterator()).
+/// @param root the root of an instance or definition
+/// @return the tasks in depth-first order
 std::vector<TaskRef> allTasks(WorkComponent* root);
 
-/** The task with this definition-level ID; node and item are null if there is none. */
+/// @brief Finds a task by its definition-level ID.
+/// @param root the root of an instance or definition
+/// @param taskId the task id
+/// @return the task; node and item are null if there is none
 TaskRef findTask(WorkComponent* root, const std::string& taskId);
 
+/// @brief Gets the AutomatedTask behind a task reference.
+/// @param ref the task
+/// @return the AutomatedTask, or nullptr if the task is of another kind
 AutomatedTask* asAutomatedTask(const TaskRef& ref);
+/// @brief Gets the ApprovalTask behind a task reference.
+/// @param ref the task
+/// @return the ApprovalTask, or nullptr if the task is of another kind
 ApprovalTask* asApprovalTask(const TaskRef& ref);
 
 #endif

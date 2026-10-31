@@ -22,7 +22,8 @@ void sendJson(httplib::Response& res, const json& body, int status = 200) {
 json parseBody(const httplib::Request& req) {
     if (req.body.empty()) return json::object();
     json body = json::parse(req.body, nullptr, false);
-    if (body.is_discarded() || !body.is_object()) throw GatewayError(400, "Request body is not a JSON object.");
+    if (body.is_discarded()) throw GatewayError(400, "Request body is not valid JSON.");
+    if (!body.is_object()) throw GatewayError(400, "Request body is not a JSON object.");
     return body;
 }
 
@@ -40,6 +41,8 @@ void guarded(httplib::Response& res, Handler handler) {
         sendJson(res, json{{"ok", false}, {"message", e.what()}, {"errors", e.errors}}, e.status);
     } catch (const std::exception& e) {
         sendJson(res, json{{"ok", false}, {"message", std::string("Engine error: ") + e.what()}}, 500);
+    } catch (...) {
+        sendJson(res, json{{"ok", false}, {"message", "Engine error (unknown exception)."}}, 500);
     }
 }
 
@@ -64,9 +67,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    server.Get("/api/meta", [&](const httplib::Request&, httplib::Response& res) {
-        guarded(res, [&]() -> json { return gateway.meta(); });
-    });
     server.Post("/api/reset", [&](const httplib::Request&, httplib::Response& res) {
         guarded(res, [&]() -> json { return gateway.reset(); });
     });
@@ -129,6 +129,14 @@ int main(int argc, char** argv) {
             throw GatewayError(400, "Unknown action '" + action + "'");
         });
     });
+
+    // An API path or method that matches no route still gets a JSON message (handled replies keep theirs).
+    httplib::Server::HandlerWithResponse apiError = [](const httplib::Request& req, httplib::Response& res) {
+        if (!res.body.empty() || req.path.compare(0, 5, "/api/") != 0) return httplib::Server::HandlerResponse::Unhandled;
+        sendJson(res, json{{"ok", false}, {"message", "No API endpoint " + req.method + " " + req.path.substr(0, 200) + "."}}, res.status);
+        return httplib::Server::HandlerResponse::Handled;
+    };
+    server.set_error_handler(apiError);
 
     std::cout << "TIVIDY web demo running at http://localhost:" << port << "/  (Ctrl+C to stop)" << std::endl;
     std::cout << "Serving pages from: " << publicDir << "; templates from: " << templatesDir << std::endl;

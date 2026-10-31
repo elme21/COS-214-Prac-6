@@ -1,5 +1,5 @@
-// TEMPORARY - stands in for a name on WorkStage (Member 1) until WorkStage stores the name
-// passed to CodeDefinitionBuilder::addStage. Delete when that lands and read the name instead.
+// TEMPORARY - stands in for a name on WorkStage (Member 1): WorkStage declares a name member but
+// nothing can set or read it. Delete this when WorkStage exposes the name passed to addStage.
 #include "StageNames.h"
 
 #include "TaskLookup.h"

@@ -33,11 +33,7 @@ std::string slugOf(const std::string& name) {
 
 ScenarioRuntime::ScenarioRuntime(const ScenarioSpec& spec)
     : scenario(spec), slug(slugOf(spec.name)), built(nullptr), counter(0) {
-    // finalNames must not reallocate after FinalApproverHandler keeps a reference: reserve first.
     std::vector<const TaskSpec*> tasks = scenario.allTasks();
-    size_t approvals = 0;
-    for (size_t i = 0; i < tasks.size(); ++i) if (tasks[i]->type == "approval") ++approvals;
-    finalNames.reserve(approvals);
 
     for (size_t i = 0; i < scenario.participants.size(); ++i) {
         const ParticipantSpec& p = scenario.participants[i];
@@ -65,8 +61,7 @@ ScenarioRuntime::ScenarioRuntime(const ScenarioSpec& spec)
                 if (label.empty()) label = isFinal ? std::string("Final approver") : "Approver level " + std::to_string(k);
                 ApprovalHandler* real = nullptr;
                 if (isFinal) {
-                    finalNames.push_back(label);
-                    real = new FinalApproverHandler(finalNames.back(), level.limit);
+                    real = new FinalApproverHandler(label, level.limit);
                 } else {
                     real = new RoleApproverHandler(label, level.role, level.limit, next);
                 }

@@ -84,7 +84,6 @@ struct EngineGateway::Instance {
     std::unique_ptr<MonitoringCollector> monitor;
 
     SnapshotHistory snapshots;                           // real Caretaker
-    std::vector<Data> snapshotData;                      // temporary: InstanceSnapshot omits instance data
     std::vector<std::string> snapshotLabels;
 
     std::vector<std::shared_ptr<WorkComponent> > retiredRoots;            // replaced by a restore, kept alive
@@ -208,8 +207,9 @@ std::string asText(const json& v) {
 
 void facadeStep(Trace& trace, const std::string& operation) {
     trace.pending("WorkflowManager::" + operation, "Facade",
-                  "not used: WorkflowManager keeps each instance's tree, mediator and command history private, "
-                  "so a GUI cannot show or act on its tasks. EngineGateway does the same steps with the real classes");
+                  "not used: WorkflowManager keeps each instance's tree, mediator and command history private (no "
+                  "accessor), so a case it creates cannot be shown or acted on, and its complete() needs an InProgress "
+                  "task that no Facade operation can produce. EngineGateway does the same steps with the real classes");
 }
 
 /** The real command for each action. */
@@ -1044,16 +1044,12 @@ json EngineGateway::snapshot(const std::string& instanceId) {
     inst.workflow->setData(inst.data);
     std::shared_ptr<InstanceSnapshot> snap = inst.workflow->createSnapshot();
     inst.snapshots.save(snap);
-    inst.snapshotData.push_back(inst.data);
     std::ostringstream label;
-    label << "#" << inst.snapshotData.size() << " at " << nowLabel() << " - " << snap->label();
+    label << "#" << inst.snapshotLabels.size() + 1 << " at " << nowLabel() << " - " << snap->label();
     inst.snapshotLabels.push_back(label.str());
-    trace.engine("WorkflowInstance::createSnapshot()", "Memento (Originator)",
-                 "copies the status and clones the whole tree (Prototype) into an InstanceSnapshot");
+    trace.engine("WorkflowInstance::setData + createSnapshot()", "Memento (Originator)",
+                 "copies the status and case data and clones the whole tree (Prototype) into an InstanceSnapshot");
     trace.engine("SnapshotHistory::save(snapshot)", "Memento (Caretaker)", "stores it without reading it");
-    trace.temporary("case-data copy", "Memento",
-                    "InstanceSnapshot saves status and tree but not WorkflowInstance::getData(), so the gateway keeps "
-                    "a copy beside it");
     inst.bus->publish(Event(EventType::EXTERNAL_EVENT, inst.id, "", "snapshot " + label.str()));
     return respond(inst, true, "Snapshot " + label.str() + " saved.", false, trace, before, console.lines());
 }
@@ -1079,11 +1075,12 @@ json EngineGateway::restoreSnapshot(const std::string& instanceId) {
     inst.retiredMediators.push_back(std::move(inst.mediator));
     inst.workflow->restoreSnapshot(snap);
     trace.engine("WorkflowInstance::restoreSnapshot(snapshot)", "Memento (Originator)",
-                 "restores status '" + inst.workflow->getStatus() + "' and a fresh clone of the saved tree");
+                 "restores status '" + inst.workflow->getStatus() + "', the case data and a fresh clone of the saved tree");
     inst.mediator.reset(new ResourceCoordinator());
     wire(inst, trace);
 
-    inst.data = inst.snapshotData.back();
+    inst.data = inst.workflow->getData();
+    trace.engine("WorkflowInstance::getData()", "Memento (Originator)", "the case data as it was when the snapshot was taken");
     std::vector<std::string> keys;
     for (Data::const_iterator it = inst.data.begin(); it != inst.data.end(); ++it) {
         if (it->first.compare(0, 11, "resourceId.") == 0) keys.push_back(it->first.substr(11));
@@ -1342,12 +1339,3 @@ json EngineGateway::resources(const std::string& scenarioKey) {
     return out;
 }
 
-json EngineGateway::meta() {
-    std::lock_guard<std::mutex> lock(mutex);
-    json list = json::array();
-    for (size_t i = 0; i < scenarioList.size(); ++i) {
-        list.push_back(json{{"key", scenarioList[i]->key()}, {"name", scenarioList[i]->spec().name},
-                            {"industry", scenarioList[i]->spec().industry}, {"template", templateFlags[scenarioList[i]->key()]}});
-    }
-    return json{{"scenarios", list}, {"resetCount", resetCount}, {"templateErrors", templateErrors}};
-}
