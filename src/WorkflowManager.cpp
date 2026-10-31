@@ -11,6 +11,13 @@
 #include "../include/TaskRouter.h"
 #include "../include/CommandProcessor.h"
 #include "../include/CompleteCommand.h"
+#include "../include/AssignCommand.h"
+#include "../include/StartCommand.h"
+#include "../include/ApproveCommand.h"
+#include "../include/RejectCommand.h"
+#include "../include/CancelCommand.h"
+#include "../include/EscalateCommand.h"
+#include "../include/MakeAvailableCommand.h"
 #include <stdexcept>
 #include <functional>
 #include <vector>
@@ -208,4 +215,89 @@ std::string WorkflowManager::getStatus(const std::string& id){
     throw std::invalid_argument("Unknown instance: "+id);
 
  return it->second.instance->getStatus();
+}
+WorkflowInstance* WorkflowManager::getInstance(const std::string& id){
+ auto it=instances.find(id);
+ if(it==instances.end()) throw std::invalid_argument("Unknown instance: "+id);
+ return it->second.instance.get();
+}
+
+WorkComponent* WorkflowManager::getTree(const std::string& id){
+ return getInstance(id)->getRoot().get();
+}
+
+WorkComponent* WorkflowManager::getTask(const std::string& id,const std::string& taskId){
+ auto it=instances.find(id);
+ if(it==instances.end()) throw std::invalid_argument("Unknown instance: "+id);
+ auto task=it->second.components.find(taskId);
+ if(task==it->second.components.end()) throw std::invalid_argument("Unknown task ID: "+taskId);
+ return task->second;
+}
+
+ResourceCoordinator* WorkflowManager::getMediator(const std::string& id){
+ auto it=instances.find(id);
+ if(it==instances.end()) throw std::invalid_argument("Unknown instance: "+id);
+ return it->second.mediator.get();
+}
+
+CommandProcessor* WorkflowManager::getCommands(const std::string& id){
+ auto it=instances.find(id);
+ if(it==instances.end()) throw std::invalid_argument("Unknown instance: "+id);
+ return it->second.commands.get();
+}
+
+bool WorkflowManager::runTaskCommand(const std::string& id,const std::string& taskId,
+                                     const std::string& action,Participant* participant){
+ auto it=instances.find(id);
+ if(it==instances.end()) throw std::invalid_argument("Unknown instance: "+id);
+ Runtime& run=it->second;
+ if(run.instance->getStatus()!="Running") throw std::logic_error("Instance is not running");
+ WorkComponent* component=getTask(id,taskId);
+ WorkItem* item=run.items.at(taskId);
+ if((action=="makeAvailable"||action=="assign"||action=="start") &&
+    !run.mediator->canBecomeAvailable(item))
+    throw std::logic_error("Task prerequisites not met: "+taskId);
+ std::unique_ptr<WorkflowCommand> command;
+ if(action=="makeAvailable") command.reset(new MakeAvailableCommand(component));
+ else if(action=="assign") command.reset(new AssignCommand(component,participant));
+ else if(action=="start") command.reset(new StartCommand(component));
+ else if(action=="approve") command.reset(new ApproveCommand(component));
+ else if(action=="reject") command.reset(new RejectCommand(component));
+ else if(action=="cancel") command.reset(new CancelCommand(component));
+ else if(action=="escalate") command.reset(new EscalateCommand(component));
+ else throw std::invalid_argument("Unknown action: "+action);
+ return run.commands->run(std::move(command));
+}
+
+bool WorkflowManager::makeAvailable(const std::string& id,const std::string& taskId){
+ return runTaskCommand(id,taskId,"makeAvailable");
+}
+
+bool WorkflowManager::assign(const std::string& id,const std::string& taskId,Participant* participant){
+ if(!participant) throw std::invalid_argument("Cannot assign a null participant");
+ return runTaskCommand(id,taskId,"assign",participant);
+}
+
+bool WorkflowManager::start(const std::string& id,const std::string& taskId){
+ return runTaskCommand(id,taskId,"start");
+}
+
+bool WorkflowManager::approve(const std::string& id,const std::string& taskId){
+ return runTaskCommand(id,taskId,"approve");
+}
+
+bool WorkflowManager::reject(const std::string& id,const std::string& taskId){
+ return runTaskCommand(id,taskId,"reject");
+}
+
+bool WorkflowManager::cancel(const std::string& id,const std::string& taskId){
+ return runTaskCommand(id,taskId,"cancel");
+}
+
+bool WorkflowManager::escalate(const std::string& id,const std::string& taskId){
+ return runTaskCommand(id,taskId,"escalate");
+}
+
+void WorkflowManager::undo(const std::string& id){
+ getCommands(id)->undo();
 }
