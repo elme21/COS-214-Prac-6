@@ -80,7 +80,7 @@ These are the most current and comprehensive documents for TIVIDY:
 <br>*An Activity Diagram depicting the workflow of a possible use for TIVIDY, i.e. a university enrolment system, and how that application would work*
 
 ## User Guide
-- **[User Manual]([path/to/user-manual.pdf](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/User%20Guide.pdf))** - User Manual
+- **[User Manual](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/User%20Guide.pdf)** 
   <br>*Guide for end users of how to run TIVIDY*
 
 ## GitHub 
