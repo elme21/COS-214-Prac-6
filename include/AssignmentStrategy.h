@@ -16,7 +16,7 @@ class Participant;   // Person 4
  *
  * @author Logan (Observer and Strategy)
  * @date 2026-10-28
- * @ingroup StrategyPattern
+ * 
  */
 
 /**
