@@ -6,7 +6,7 @@ PROJECT_BRIEF          = "Generic workflow management system (COS 214)"
 OUTPUT_DIRECTORY       = docs/api
 
 # What to document: every header and source file under src/.
-INPUT                  = src
+INPUT                  = include
 FILE_PATTERNS          = *.h *.cpp
 RECURSIVE              = YES
 
