@@ -11,7 +11,7 @@ public:
     /// @brief Constructs a FinalApproverHandler with a specified limit.
     /// @param name  the handler's name
     /// @param limit The maximum amount this handler can approve.
-    explicit FinalApproverHandler(std::string& name, double limit) : ApprovalHandler(name, nullptr), limit(limit) {}
+    explicit FinalApproverHandler(const std::string& name, double limit) : ApprovalHandler(name, nullptr), limit(limit) {}
 
     /// @brief Tries to decide on the approval request.
     /// @param request The approval request to decide on.
