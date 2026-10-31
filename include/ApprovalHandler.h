@@ -23,6 +23,9 @@ public:
     /// @brief Sets the successor in the chain of responsibility.
     /// @param next The next handler in the chain
     void setSuccessor(ApprovalHandler* next) { successor = next; }
+    /// @brief Gets the name of the handler
+    /// @return The handler's name
+    const std::string& getName() const { return name; }
 
 protected:
     /// @brief Attempts to decide the approval request
