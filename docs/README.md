@@ -42,10 +42,10 @@ These are the most current and comprehensive documents for TIVIDY:
 
   - **[Task 4](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task4GOF.pdf)**
 
-  - **[Task 5](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%205.pdff)**
+  - **[Task 5](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%205.pdf)**
 
-
-  - **[Task 6]https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%206.pdf)**
+  - **[Task 6](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%206.pdf)**
+ 
 
 
 
