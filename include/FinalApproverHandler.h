@@ -9,6 +9,7 @@ class FinalApproverHandler : public ApprovalHandler
 {
 public:
     /// @brief Constructs a FinalApproverHandler with a specified limit.
+    /// @param name  the handler's name
     /// @param limit The maximum amount this handler can approve.
     explicit FinalApproverHandler(std::string& name, double limit) : ApprovalHandler(name, nullptr), limit(limit) {}
 
