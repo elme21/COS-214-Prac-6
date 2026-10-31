@@ -10,10 +10,6 @@
 #include "WorkComponent.h" 
 #include "Participant.h"
 
-class WorkComponent;
-class WorkItemState;
-class Participant;
-
 /**
  * @class MakeAvailableCommand
  * @brief Encapsulates makeAvailable operations on a WorkComponent.
