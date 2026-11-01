@@ -1,20 +1,13 @@
 #include "EngineGateway.h"
 
 #include "Trace.h"
-#include "HistoryLog.h"
-#include "WebCommands.h"
-#include "PendingIntegration.h"
 
-// Industry-specific code (web/scenarios/)
-#include "Scenario.h"
-#include "EducationScenario.h"
-#include "HealthcareScenario.h"
-#include "RecordingDefinitionBuilder.h"
-#include "ParticipantDirectory.h"
-#include "NameLookup.h"
-#include "TestConnectors.h"
-#include "ChainTrace.h"
-#include "RuleHelpers.h"
+// Generic scenario support (web/scenarios/)
+#include "ScenarioSpec.h"
+#include "ScenarioRuntime.h"
+#include "Rules.h"
+#include "StageNames.h"
+#include "TaskLookup.h"
 
 // The real TIVIDY engine (include/)
 #include "WorkComponent.h"
@@ -22,21 +15,40 @@
 #include "WorkItemState.h"
 #include "AutomatedTask.h"
 #include "ApprovalTask.h"
+#include "DefinitionRegistry.h"
 #include "WorkflowDefinition.h"
 #include "WorkflowInstance.h"
 #include "InstanceSnapshot.h"
 #include "SnapshotHistory.h"
 #include "CommandProcessor.h"
+#include "WorkflowCommand.h"
+#include "MakeAvailableCommand.h"
+#include "AssignCommand.h"
+#include "StartCommand.h"
+#include "CompleteCommand.h"
+#include "ApproveCommand.h"
+#include "RejectCommand.h"
+#include "CancelCommand.h"
+#include "EscalateCommand.h"
 #include "ReadyTaskIterator.h"
 #include "ResourceCoordinator.h"
 #include "Resource.h"
 #include "Participant.h"
-#include "ConnectorManager.h"   // web/temporary_stubs until Member 7's real class exists
+#include "TaskRouter.h"
+#include "AssignmentStrategy.h"
+#include "Event.h"
+#include "WorkflowEventBus.h"
+#include "DependencyActivator.h"
+#include "AuditLogger.h"
+#include "NotificationSender.h"
+#include "MonitoringCollector.h"
 
-#include <chrono>
+#include <dirent.h>
+#include <algorithm>
+#include <cstdlib>
 #include <ctime>
+#include <fstream>
 #include <iostream>
-#include <set>
 #include <sstream>
 
 typedef std::map<std::string, std::string> Data;
@@ -46,82 +58,55 @@ using nlohmann::json;
 // Internal records
 // ===========================================================================
 
-/** Everything one industry needs, rebuilt from scratch by reset(). */
-struct EngineGateway::Industry {
-    std::unique_ptr<Scenario> scenario;
-    std::unique_ptr<ResourceCoordinator> coordinator;   // Mediator shared by the industry's instances
-    std::unique_ptr<ParticipantDirectory> people;
-    std::unique_ptr<ConnectorManager> connectors;
-    std::map<std::string, std::unique_ptr<TestConnector> > testConnectors;
-    std::unique_ptr<RecordingDefinitionBuilder> builder;
-    std::shared_ptr<WorkflowDefinition> definition;     // stands in for DefinitionRegistry
-    std::vector<TaskInfo> tasks;
-    std::vector<TraceStep> buildTrace;
-    int counter;
-
-    Industry() : counter(0) {}
-
-    const TaskInfo* info(const std::string& id) const {
-        for (size_t i = 0; i < tasks.size(); ++i) if (tasks[i].id == id) return &tasks[i];
-        return nullptr;
-    }
-    std::string kind(const std::string& id) const {
-        const std::vector<RecordingDefinitionBuilder::TaskRecord>& records = builder->tasks();
-        for (size_t i = 0; i < records.size(); ++i) if (records[i].id == id) return records[i].kind;
-        return "?";
-    }
-    std::string stage(const std::string& id) const {
-        const std::vector<RecordingDefinitionBuilder::TaskRecord>& records = builder->tasks();
-        for (size_t i = 0; i < records.size(); ++i) if (records[i].id == id) return records[i].stage;
-        return "";
-    }
-    std::vector<std::string> prerequisites(const std::string& id) const {
-        std::vector<std::string> result;
-        const std::vector<RecordingDefinitionBuilder::DependencyRecord>& deps = builder->dependencies();
-        for (size_t i = 0; i < deps.size(); ++i) if (deps[i].to == id) result.push_back(deps[i].from);
-        return result;
-    }
+/** State of one task at a moment, to find what an action changed. */
+struct EngineGateway::Row {
+    std::string id;
+    std::string name;
+    std::string state;
+    const Participant* assignee;
 };
 
-/** One running workflow instance plus its web-side bookkeeping. */
+/** One running workflow instance: real engine objects only, plus display bookkeeping. */
 struct EngineGateway::Instance {
     std::string id;
-    std::string subjectId;
-    std::string subjectName;
-    std::string summary;
-    Industry* industry;
-    std::unique_ptr<WorkflowInstance> workflow;          // real engine instance (owns the cloned tree)
-    std::unique_ptr<CommandProcessor> processor;         // real engine invoker
-    int commandDepth;                                    // commands currently on the processor's stack
-    HistoryLog log;                                      // temporary audit trail
-    SnapshotHistory snapshots;                           // real engine caretaker
-    std::vector<Data> snapshotData;
+    std::string label;
+    ScenarioRuntime* scenario;
+
+    std::unique_ptr<WorkflowInstance> workflow;          // real Originator, owns the cloned tree
+    std::unique_ptr<ResourceCoordinator> mediator;       // real Mediator for this instance
+    std::unique_ptr<CommandProcessor> commands;          // real Invoker with its own history
+    std::vector<std::string> commandLabels;              // display text for getHistory(), same order
+
+    std::unique_ptr<WorkflowEventBus> bus;               // real Subject (declared before its listeners)
+    std::unique_ptr<DependencyActivator> activator;      // real listeners
+    std::unique_ptr<AuditLogger> audit;
+    std::unique_ptr<NotificationSender> notifier;
+    std::unique_ptr<MonitoringCollector> monitor;
+
+    SnapshotHistory snapshots;                           // real Caretaker
     std::vector<std::string> snapshotLabels;
-    std::vector<std::shared_ptr<WorkComponent> > retiredRoots;   // kept alive: the Mediator still holds their pointers
-    Data data;                                           // case data (WorkflowInstance::data has no accessors)
+
+    std::vector<std::shared_ptr<WorkComponent> > retiredRoots;            // replaced by a restore, kept alive
+    std::vector<std::unique_ptr<ResourceCoordinator> > retiredMediators;
+
+    std::map<std::string, Participant*> workloadCounted;  // task id -> participant whose workload counts it
+    Data data;                                            // working copy; stored with WorkflowInstance::setData
     bool started;
 
-    Instance() : industry(nullptr), commandDepth(0), started(false) {}
+    Instance() : scenario(nullptr), started(false) {}
     WorkComponent* root() const { return workflow->getRoot().get(); }
 };
 
-/** RuleContext for scenario rules, bound to one instance and one action. */
-class EngineGateway::Context : public RuleContext {
+/** Everything one action needs to pass around. */
+class EngineGateway::Context {
 public:
-    Context(Instance& instance, Trace& trace, WorkItem* item)
-        : inst(instance), tr(trace), target(item), warning(false) {}
-
-    WorkItem* task(const std::string& id) override { return findTask(inst.root(), id); }
-    CaseData& data() override { return inst.data; }
-    Trace& trace() override { return tr; }
-    ResourceCoordinator& coordinator() override { return *inst.industry->coordinator; }
-    ParticipantDirectory& participants() override { return *inst.industry->people; }
-
+    Context(Instance& instance, Trace& trace, const std::string& branch)
+        : inst(instance), tr(trace), branchChoice(branch), warning(false) {}
     Instance& inst;
     Trace& tr;
-    WorkItem* target;
+    std::string branchChoice;   // a decision branch chosen in the UI (manual choice or override)
     std::vector<std::string> notices;
-    bool warning;   // the action ran, but something the marker should notice was refused
+    bool warning;               // the action ran, but something the marker should notice was refused
 };
 
 // ===========================================================================
@@ -148,23 +133,6 @@ private:
     std::streambuf* previous;
 };
 
-struct Row {
-    std::string id;
-    std::string name;
-    std::string state;
-    const Participant* assignee;
-};
-
-std::vector<Row> rows(WorkComponent* root) {
-    std::vector<Row> result;
-    std::vector<WorkItem*> tasks = allTasks(root);
-    for (size_t i = 0; i < tasks.size(); ++i) {
-        Row r = { tasks[i]->getId(), tasks[i]->getName(), stateOf(tasks[i]), tasks[i]->getAssignee() };
-        result.push_back(r);
-    }
-    return result;
-}
-
 json traceJson(const std::vector<TraceStep>& steps) {
     json out = json::array();
     for (size_t i = 0; i < steps.size(); ++i) {
@@ -180,32 +148,34 @@ std::string join(const std::vector<std::string>& parts, const std::string& sep) 
     return out;
 }
 
-/** Which engine operation a UI action calls, for messages. */
+std::string stateOf(const WorkComponent* c) {
+    return c == nullptr || c->getState() == nullptr ? std::string("?") : c->getState()->name();
+}
+
 std::string operationName(const std::string& action) {
     if (action == "assign") return "assignTo(participant)";
+    if (action == "autoAssign") return "TaskRouter::route()";
     return action + "()";
 }
 
-/** The concrete command the team designed for each action (for honest labelling). */
-std::string designedCommand(const std::string& action) {
-    if (action == "assign") return "AssignCommand";
-    if (action == "complete") return "CompleteCommand";
-    if (action == "approve") return "ApproveCommand";
-    if (action == "reject") return "RejectCommand";
-    if (action == "cancel") return "CancelCommand";
-    return "";
+std::string kindOf(const TaskRef& ref) {
+    if (asApprovalTask(ref) != nullptr) return "approval";
+    if (asAutomatedTask(ref) != nullptr) return "automated";
+    return "manual";
 }
 
-void facadeStep(Trace& trace, const std::string& action) {
-    if (action == "complete") {
-        trace.pending("WorkflowManager::complete(itemId)", "Facade",
-                      "not yet integrated: it throws 'waiting for integration'; EngineGateway::complete "
-                      "does the same job (temporary)");
-    } else {
-        trace.pending("WorkflowManager", "Facade",
-                      "not yet integrated: no " + operationName(action) +
-                      " on the facade yet; EngineGateway calls the work item directly (temporary)");
+/** Which Observer event a new state is announced as (table lookup, no switch). */
+EventType eventFor(const std::string& state) {
+    static std::map<std::string, EventType> table;
+    if (table.empty()) {
+        table["Available"] = EventType::ITEM_AVAILABLE;
+        table["Assigned"] = EventType::ITEM_ASSIGNED;
+        table["Completed"] = EventType::ITEM_COMPLETED;
+        table["Rejected"] = EventType::ITEM_REJECTED;
+        table["Cancelled"] = EventType::ITEM_CANCELLED;
     }
+    std::map<std::string, EventType>::const_iterator it = table.find(state);
+    return it == table.end() ? EventType::EXTERNAL_EVENT : it->second;
 }
 
 std::string nowLabel() {
@@ -215,91 +185,147 @@ std::string nowLabel() {
     return buffer;
 }
 
+bool isNumber(const std::string& s) {
+    if (s.empty()) return false;
+    std::istringstream in(s);
+    double v = 0;
+    in >> v;
+    return !in.fail() && in.eof();
+}
+
+std::string asText(const json& v) {
+    if (v.is_string()) return v.get<std::string>();
+    if (v.is_number_integer()) return std::to_string(v.get<long long>());
+    if (v.is_number()) {
+        std::ostringstream out;
+        out << v.get<double>();
+        return out.str();
+    }
+    if (v.is_boolean()) return v.get<bool>() ? "true" : "false";
+    return "";
+}
+
+void facadeStep(Trace& trace, const std::string& operation) {
+    trace.pending("WorkflowManager::" + operation, "Facade",
+                  "not used: WorkflowManager keeps each instance's tree, mediator and command history private (no "
+                  "accessor), so a case it creates cannot be shown or acted on, and its complete() needs an InProgress "
+                  "task that no Facade operation can produce. EngineGateway does the same steps with the real classes");
+}
+
+/** The real command for each action. */
+WorkflowCommand* commandFor(const std::string& action, WorkComponent* node, Participant* participant,
+                            std::string& className) {
+    if (action == "makeAvailable") { className = "MakeAvailableCommand"; return new MakeAvailableCommand(node); }
+    if (action == "assign") { className = "AssignCommand"; return new AssignCommand(node, participant); }
+    if (action == "start") { className = "StartCommand"; return new StartCommand(node); }
+    if (action == "complete") { className = "CompleteCommand"; return new CompleteCommand(node); }
+    if (action == "approve") { className = "ApproveCommand"; return new ApproveCommand(node); }
+    if (action == "reject") { className = "RejectCommand"; return new RejectCommand(node); }
+    if (action == "cancel") { className = "CancelCommand"; return new CancelCommand(node); }
+    if (action == "escalate") { className = "EscalateCommand"; return new EscalateCommand(node); }
+    return nullptr;
+}
+
+bool isAction(const std::string& action) {
+    static const char* names[] = { "makeAvailable", "assign", "autoAssign", "start", "execute", "complete",
+                                   "approve", "reject", "cancel", "escalate" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) if (action == names[i]) return true;
+    return false;
+}
+
+bool readFile(const std::string& path, std::string& out) {
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) return false;
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    out = buffer.str();
+    return true;
+}
+
 } // namespace
 
 // ===========================================================================
-// Construction / reset
+// Construction, templates and scenarios
 // ===========================================================================
 
-EngineGateway::EngineGateway() : activeTrace(nullptr), resetCount(0) {
+EngineGateway::EngineGateway(const std::string& dir) : templatesDir(dir), resetCount(0) {
     ConsoleCapture quiet;
-    build();
+    loadTemplates();
 }
 
 EngineGateway::~EngineGateway() {
-    instances.clear();     // instances point into the industries, so they go first
-    industries.clear();
+    instances.clear();       // instances point into the scenarios and the registry, so they go first
+    scenarioList.clear();
+    registry.reset();
 }
 
-void EngineGateway::build() {
+void EngineGateway::loadTemplates() {
     instances.clear();
     instanceOrder.clear();
-    industries.clear();
-    industryOrder.clear();
+    scenarioList.clear();
+    templateFlags.clear();
+    templateFiles.clear();
+    templateErrors.clear();
+    registry.reset(new DefinitionRegistry());
 
-    std::vector<Scenario*> scenarios;
-    scenarios.push_back(new EducationScenario());
-    scenarios.push_back(new HealthcareScenario());
-
-    for (size_t s = 0; s < scenarios.size(); ++s) {
-        std::unique_ptr<Industry> ind(new Industry());
-        ind->scenario.reset(scenarios[s]);
-        Trace trace;
-
-        ind->coordinator.reset(new ResourceCoordinator());
-        ind->people.reset(new ParticipantDirectory(ind->coordinator.get()));
-        ind->scenario->seedParticipants(*ind->people);
-        trace.engine("Participant / Resource + ResourceCoordinator::registerColleague", "Mediator",
-                     "seeded people and doctor-slot resources register with the industry's mediator");
-
-        ind->connectors.reset(new ConnectorManager());
-        ind->testConnectors["medical-aid"].reset(new TestPaymentConnector());
-        ind->testConnectors["messaging"].reset(new TestMessagingConnector());
-        ind->testConnectors["student-records"].reset(new TestStudentRecordsConnector());
-        for (std::map<std::string, std::unique_ptr<TestConnector> >::iterator it = ind->testConnectors.begin();
-             it != ind->testConnectors.end(); ++it) {
-            ind->connectors->registerConnector(it->first, it->second.get());
-        }
-        trace.temporary("ConnectorManager (web/temporary_stubs) + Test*Connector adapters", "Adapter",
-                        "stand in for Member 7's ConnectorManager and PaymentConnector/MessagingConnector/"
-                        "StudentRecordsConnector");
-
-        ind->builder.reset(new RecordingDefinitionBuilder(ind->scenario->title()));
-        ind->definition = ind->scenario->buildDefinition(*ind->builder);
-        trace.scenario(ind->scenario->directorName() + "::construct(builder)", "Builder (Director)",
-                       "the industry's construction sequence");
-        trace.temporary("RecordingDefinitionBuilder", "Builder (ConcreteBuilder)",
-                        "forwards addStage/addTask to the real CodeDefinitionBuilder; records dependencies and "
-                        "the approval chain, which CodeDefinitionBuilder cannot store yet");
-        trace.engine("CodeDefinitionBuilder::addStage / addTask -> getDefinition()", "Builder",
-                     "creates WorkStage / ManualTask / AutomatedTask / ApprovalTask and the WorkflowDefinition");
-
-        ind->tasks = ind->scenario->tasks();
-        WorkComponent* root = ind->definition->getRoot().get();
-        for (size_t i = 0; i < ind->tasks.size(); ++i) {
-            if (ind->tasks[i].connector.empty()) continue;
-            AutomatedTask* automated = asAutomatedTask(findTask(root, ind->tasks[i].id));
-            if (automated == nullptr) continue;
-            automated->setConnectorName(ind->tasks[i].connector);
-            automated->setConnectorManager(ind->connectors.get());
-        }
-        trace.engine("AutomatedTask::setConnectorName / setConnectorManager", "Adapter (client)",
-                     "set once on the definition; every clone copies them");
-        trace.pending("DefinitionRegistry::registerDefinition", "Prototype (PrototypeManager)",
-                      "not linked: DefinitionRegistry has a header but no .cpp (Member 3); the gateway keeps the "
-                      "definition itself");
-        ind->buildTrace = trace.steps();
-
-        std::string key = ind->scenario->key();
-        industryOrder.push_back(key);
-        industries[key] = std::move(ind);
+    std::vector<std::string> files;
+    DIR* dir = opendir(templatesDir.c_str());
+    if (dir == nullptr) {
+        templateErrors.push_back("templates folder '" + templatesDir + "' not found");
+        return;
     }
+    while (dirent* entry = readdir(dir)) {
+        std::string name = entry->d_name;
+        if (name.size() > 5 && name.compare(name.size() - 5, 5, ".json") == 0) files.push_back(name);
+    }
+    closedir(dir);
+    std::sort(files.begin(), files.end());
+
+    for (size_t i = 0; i < files.size(); ++i) {
+        std::string text;
+        if (!readFile(templatesDir + "/" + files[i], text)) {
+            templateErrors.push_back(files[i] + ": cannot be read");
+            continue;
+        }
+        json spec = json::parse(text, nullptr, false);
+        if (spec.is_discarded()) {
+            templateErrors.push_back(files[i] + ": not valid JSON");
+            continue;
+        }
+        std::vector<std::string> errors;
+        if (addScenario(spec, true, files[i], errors) == nullptr) {
+            for (size_t e = 0; e < errors.size(); ++e) templateErrors.push_back(files[i] + ": " + errors[e]);
+        }
+    }
+    for (size_t e = 0; e < templateErrors.size(); ++e) std::cerr << "[templates] " << templateErrors[e] << std::endl;
 }
 
-EngineGateway::Industry& EngineGateway::industryOrThrow(const std::string& key) {
-    std::map<std::string, std::unique_ptr<Industry> >::iterator it = industries.find(key);
-    if (it == industries.end()) throw GatewayError(404, "Unknown industry '" + key + "'");
-    return *it->second;
+ScenarioRuntime* EngineGateway::addScenario(const json& source, bool isTemplate, const std::string& file,
+                                            std::vector<std::string>& errors) {
+    ScenarioSpec spec;
+    if (!parseScenarioSpec(source, spec, errors)) return nullptr;
+    std::unique_ptr<ScenarioRuntime> runtime(new ScenarioRuntime(spec));
+    for (size_t i = 0; i < scenarioList.size(); ++i) {
+        if (scenarioList[i]->key() == runtime->key()) {
+            errors.push_back("name: '" + spec.name + "' is already used by another scenario");
+            return nullptr;
+        }
+    }
+    std::string error;
+    std::vector<std::string> steps;
+    if (!runtime->build(*registry, error, steps)) {
+        errors.push_back(error);
+        return nullptr;
+    }
+    templateFlags[runtime->key()] = isTemplate;
+    templateFiles[runtime->key()] = file;
+    scenarioList.push_back(std::move(runtime));
+    return scenarioList.back().get();
+}
+
+ScenarioRuntime& EngineGateway::scenarioOrThrow(const std::string& key) {
+    for (size_t i = 0; i < scenarioList.size(); ++i) if (scenarioList[i]->key() == key) return *scenarioList[i];
+    throw GatewayError(404, "Unknown scenario '" + key + "' (was the demo reset?)");
 }
 
 EngineGateway::Instance& EngineGateway::instanceOrThrow(const std::string& id) {
@@ -311,163 +337,322 @@ EngineGateway::Instance& EngineGateway::instanceOrThrow(const std::string& id) {
 json EngineGateway::reset() {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
-    build();
+    loadTemplates();
     ++resetCount;
-    return json{{"ok", true}, {"message", "Demo reset: both definitions rebuilt, all instances discarded."},
-                {"resetCount", resetCount}};
+    return json{{"ok", true}, {"message", "Demo reset: custom scenarios removed, templates reloaded."},
+                {"resetCount", resetCount}, {"templateErrors", templateErrors}};
+}
+
+json EngineGateway::templates() {
+    std::lock_guard<std::mutex> lock(mutex);
+    json list = json::array();
+    for (size_t i = 0; i < scenarioList.size(); ++i) {
+        ScenarioRuntime& s = *scenarioList[i];
+        if (!templateFlags[s.key()]) continue;
+        list.push_back(json{{"file", templateFiles[s.key()]}, {"name", s.spec().name},
+                            {"industry", s.spec().industry}, {"description", s.spec().description},
+                            {"spec", s.spec().source}});
+    }
+    return json{{"templates", list}, {"errors", templateErrors}};
+}
+
+json EngineGateway::validateSpec(const json& source) {
+    std::lock_guard<std::mutex> lock(mutex);
+    ScenarioSpec spec;
+    std::vector<std::string> errors;
+    bool ok = parseScenarioSpec(source, spec, errors);
+    if (ok) {
+        ScenarioRuntime probe(spec);
+        for (size_t i = 0; i < scenarioList.size(); ++i) {
+            if (scenarioList[i]->key() == probe.key()) errors.push_back("name: '" + spec.name + "' is already used by another scenario");
+        }
+        ok = errors.empty();
+    }
+    return json{{"ok", ok}, {"errors", errors},
+                {"message", ok ? std::string("The spec is valid.") : std::to_string(errors.size()) + " problem(s) found."}};
+}
+
+json EngineGateway::createScenario(const json& source) {
+    std::lock_guard<std::mutex> lock(mutex);
+    ConsoleCapture console;
+    std::vector<std::string> errors;
+    ScenarioRuntime* created = addScenario(source, false, "", errors);
+    if (created == nullptr) {
+        throw GatewayError(400, "The scenario was not created: " + std::to_string(errors.size()) + " problem(s).", errors);
+    }
+    return json{{"ok", true}, {"message", "Scenario '" + created->spec().name + "' built with the real "
+                                          "CodeDefinitionBuilder and registered in the DefinitionRegistry."},
+                {"scenario", scenarioView(*created)}, {"console", console.lines()}};
+}
+
+json EngineGateway::scenarios() {
+    std::lock_guard<std::mutex> lock(mutex);
+    ConsoleCapture console;
+    json list = json::array();
+    for (size_t i = 0; i < scenarioList.size(); ++i) list.push_back(scenarioView(*scenarioList[i]));
+    return json{{"scenarios", list}, {"templateErrors", templateErrors}};
 }
 
 // ===========================================================================
-// Wiring an instance's tree to the Mediator
+// Engine plumbing
 // ===========================================================================
 
-void EngineGateway::wire(Instance& inst, Trace& trace) {
-    Industry& ind = *inst.industry;
-    WorkComponent* root = inst.root();
-    std::vector<WorkItem*> tasks = allTasks(root);
-    for (size_t i = 0; i < tasks.size(); ++i) ind.coordinator->registerColleague(tasks[i]);
+bool EngineGateway::runCommand(Instance& inst, WorkflowCommand* command, const std::string& label) {
+    bool ok = inst.commands->run(std::unique_ptr<WorkflowCommand>(command));
+    if (ok) inst.commandLabels.push_back(label);
+    return ok;
+}
 
-    const std::vector<RecordingDefinitionBuilder::DependencyRecord>& deps = ind.builder->dependencies();
+void EngineGateway::wire(Instance& inst, Trace& trace) {
+    WorkComponent* root = inst.root();
+    std::vector<TaskRef> tasks = allTasks(root);
+    for (size_t i = 0; i < tasks.size(); ++i) inst.mediator->registerColleague(tasks[i].item);
+    const std::vector<std::pair<std::string, std::string> >& deps = inst.scenario->definition()->getDependencies();
     for (size_t i = 0; i < deps.size(); ++i) {
-        ind.coordinator->addDependency(findTask(root, deps[i].to), findTask(root, deps[i].from));
+        inst.mediator->addDependency(findTask(root, deps[i].second).item, findTask(root, deps[i].first).item);
     }
     std::ostringstream detail;
-    detail << tasks.size() << " tasks registered as colleagues; " << deps.size()
-           << " dependencies added for THIS instance's own task objects";
-    trace.temporary("RecordingDefinitionBuilder::dependencies()", "Builder",
-                    "dependency list recorded at build time (CodeDefinitionBuilder::addDependency throws)");
+    detail << tasks.size() << " tasks registered; " << deps.size()
+           << " dependencies from WorkflowDefinition::getDependencies() added for THIS instance's task objects";
     trace.engine("ResourceCoordinator::registerColleague / addDependency", "Mediator", detail.str());
+}
+
+void EngineGateway::configure(Instance& inst, Trace& trace) {
+    const ScenarioSpec& spec = inst.scenario->spec();
+    std::vector<const TaskSpec*> tasks = spec.allTasks();
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        const TaskSpec& t = *tasks[i];
+        TaskRef ref = findTask(inst.root(), t.id);
+        if (ApprovalTask* approval = asApprovalTask(ref)) {
+            double value = t.requestValue;
+            std::string from = "fixed value";
+            if (!t.requestField.empty()) {
+                value = std::atof(inst.data[t.requestField].c_str());
+                from = "input '" + t.requestField + "'";
+            }
+            approval->setRequestValue(value);
+            std::ostringstream detail;
+            detail << t.name << ": request value " << value << " (" << from << ") travels down the chain";
+            trace.engine("ApprovalTask::setRequestValue", "Chain of Responsibility", detail.str());
+        }
+        if (AutomatedTask* automated = asAutomatedTask(ref)) {
+            bool succeeds = t.successRule.present ? ruleHolds(t.successRule, inst.data) : t.succeeds;
+            automated->setStepSucceeds(succeeds);
+            if (!succeeds || t.successRule.present) {
+                trace.scenario("AutomatedTask::setStepSucceeds(" + std::string(succeeds ? "true" : "false") + ")",
+                               "scenario rule",
+                               t.name + (t.successRule.present ? ": success rule " + describeRule(t.successRule) +
+                                                                     (succeeds ? " holds" : " does NOT hold")
+                                                               : ": fails by default"));
+            }
+        }
+    }
+}
+
+void EngineGateway::publishChanges(Instance& inst, std::vector<Row>& seen, Trace& trace, bool fromUndo) {
+    // Announce every task whose state changed, one at a time: publishing ITEM_COMPLETED lets the
+    // real DependencyActivator unlock dependants, which are then announced in turn.
+    for (int guard = 0; guard < 500; ++guard) {
+        std::vector<TaskRef> tasks = allTasks(inst.root());
+        size_t i = 0;
+        for (; i < tasks.size() && i < seen.size(); ++i) {
+            if (stateOf(tasks[i].node) != seen[i].state) break;
+        }
+        if (i >= tasks.size() || i >= seen.size()) return;
+
+        std::string from = seen[i].state;
+        std::string to = stateOf(tasks[i].node);
+        seen[i].state = to;
+        seen[i].assignee = tasks[i].node->getAssignee();
+
+        EventType type = fromUndo ? EventType::EXTERNAL_EVENT : eventFor(to);
+        std::string detail = (fromUndo ? "undo: " : "") + from + " -> " + to;
+        inst.bus->publish(Event(type, inst.id, tasks[i].item->getId(), detail, tasks[i].item));
+        trace.engine("WorkflowEventBus::publish(" + eventTypeToString(type) + ", " + tasks[i].item->getName() + ")",
+                     "Observer (Subject)", detail + " -> AuditLogger, NotificationSender, MonitoringCollector notified");
+        if (type == EventType::ITEM_COMPLETED) {
+            trace.engine("DependencyActivator::update()", "Observer -> Mediator",
+                         "calls Colleague::changed(\"completed\"): ResourceCoordinator::notifyChanged asks each "
+                         "dependant canBecomeAvailable() and makes it available");
+        }
+    }
+}
+
+void EngineGateway::syncWorkload(Instance& inst, Trace* trace) {
+    // Participant::workload() feeds WorkloadAssignment, but no engine class updates it, so the
+    // gateway calls the real itemAssigned()/itemReleased() whenever a task's holder changes.
+    std::vector<TaskRef> tasks = allTasks(inst.root());
+    std::vector<std::string> changes;
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        std::string s = stateOf(tasks[i].node);
+        Participant* holder = (s == "Assigned" || s == "InProgress") ? tasks[i].node->getAssignee() : nullptr;
+        Participant*& counted = inst.workloadCounted[tasks[i].item->getId()];
+        if (counted == holder) continue;
+        if (counted != nullptr) { counted->itemReleased(); changes.push_back(counted->getName() + " -1"); }
+        if (holder != nullptr) { holder->itemAssigned(); changes.push_back(holder->getName() + " +1"); }
+        counted = holder;
+    }
+    if (trace != nullptr && !changes.empty()) {
+        trace->temporary("Participant::itemAssigned / itemReleased", "Strategy (input)",
+                         "workload " + join(changes, ", ") + " - called by EngineGateway because no engine class "
+                         "updates it, and WorkloadAssignment reads it");
+    }
 }
 
 void EngineGateway::updateStatus(Instance& inst) {
     if (!inst.started) {
         inst.workflow->setStatus("Created");
-        return;
+    } else {
+        std::vector<TaskRef> tasks = allTasks(inst.root());
+        bool finished = true;
+        for (size_t i = 0; i < tasks.size(); ++i) {
+            std::string s = stateOf(tasks[i].node);
+            if (s != "Completed" && s != "Cancelled" && s != "Rejected") finished = false;
+        }
+        inst.workflow->setStatus(finished ? "Finished" : "Running");
     }
-    std::vector<WorkItem*> tasks = allTasks(inst.root());
-    bool finished = true;
+    inst.workflow->setData(inst.data);
+}
+
+std::vector<EngineGateway::Row> EngineGateway::rowsOf(WorkComponent* root) {
+    std::vector<Row> result;
+    std::vector<TaskRef> tasks = allTasks(root);
     for (size_t i = 0; i < tasks.size(); ++i) {
-        std::string s = stateOf(tasks[i]);
-        if (s != "Completed" && s != "Cancelled" && s != "Rejected") finished = false;
+        Row r = { tasks[i].item->getId(), tasks[i].item->getName(), stateOf(tasks[i].node), tasks[i].node->getAssignee() };
+        result.push_back(r);
     }
-    inst.workflow->setStatus(finished ? "Finished" : "Running");
+    return result;
+}
+
+void EngineGateway::releaseResource(Instance& inst, const std::string& taskId, Trace& trace, const std::string& why) {
+    TaskRef ref = findTask(inst.root(), taskId);
+    if (ref.item == nullptr || inst.data.count("resourceId." + taskId) == 0) return;
+    std::string name = inst.data["resource." + taskId];
+    inst.mediator->release(ref.item);
+    inst.data.erase("resource." + taskId);
+    inst.data.erase("resourceId." + taskId);
+    inst.data.erase("resourceBy." + taskId);
+    trace.engine("ResourceCoordinator::release(" + ref.item->getName() + ")", "Mediator",
+                 why + ": " + name + " gets its place back (Resource::giveBack)");
 }
 
 // ===========================================================================
 // WorkflowManager mirror
 // ===========================================================================
 
-json EngineGateway::createInstance(const std::string& industryKey, const std::string& subjectId) {
+json EngineGateway::createInstance(const std::string& scenarioKey, const json& inputs, const std::string& label) {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
-    Industry& ind = industryOrThrow(industryKey);
+    ScenarioRuntime& scenario = scenarioOrThrow(scenarioKey);
+    const ScenarioSpec& spec = scenario.spec();
 
-    std::vector<SubjectSeed> subjects = ind.scenario->subjects();
-    const SubjectSeed* subject = nullptr;
-    for (size_t i = 0; i < subjects.size(); ++i) if (subjects[i].id == subjectId) subject = &subjects[i];
-    if (subject == nullptr) throw GatewayError(400, "Pick a " + ind.scenario->subjectNoun() + " first.");
+    Data data;
+    std::vector<std::string> problems;
+    if (!inputs.is_null() && !inputs.is_object()) throw GatewayError(400, "inputs must be an object of field -> value");
+    for (size_t i = 0; i < spec.inputs.size(); ++i) {
+        const InputSpec& in = spec.inputs[i];
+        std::string value;
+        if (inputs.is_object()) {
+            json::const_iterator it = inputs.find(in.key);
+            if (it != inputs.end()) value = asText(*it);
+        }
+        if (in.type == "number" && !value.empty() && !isNumber(value)) problems.push_back(in.label + " must be a number");
+        if (in.type == "choice" && !value.empty() &&
+            std::find(in.options.begin(), in.options.end(), value) == in.options.end()) {
+            problems.push_back(in.label + " must be one of: " + join(in.options, ", "));
+        }
+        data[in.key] = value;
+    }
+    if (inputs.is_object()) {
+        for (json::const_iterator it = inputs.begin(); it != inputs.end(); ++it) {
+            if (spec.input(it.key()) == nullptr) problems.push_back("'" + it.key() + "' is not an input field of this scenario");
+        }
+    }
+    if (!problems.empty()) throw GatewayError(400, "The input data is not valid.", problems);
 
     Trace trace;
-    trace.pending("WorkflowManager::createInstance(definitionName)", "Facade",
-                  "not yet integrated: it throws 'waiting for integration'; EngineGateway::createInstance does "
-                  "the steps below (temporary)");
-    trace.pending("DefinitionRegistry::get(name)", "Prototype (PrototypeManager)",
-                  "not linked (no .cpp, Member 3); the gateway holds the built definition");
+    facadeStep(trace, "createInstance(definitionName)");
 
     std::unique_ptr<Instance> inst(new Instance());
-    inst->industry = &ind;
+    inst->scenario = &scenario;
     std::ostringstream id;
-    id << ind.scenario->idPrefix() << "-" << ++ind.counter;
+    id << spec.idPrefix << "-" << scenario.nextInstanceNumber();
     inst->id = id.str();
-    inst->subjectId = subject->id;
-    inst->subjectName = subject->name;
-    inst->summary = subject->summary;
-    inst->data = subject->data;
+    inst->data = data;
+    inst->label = !label.empty() ? label : (!spec.subjectField.empty() && !data[spec.subjectField].empty()
+                                                ? data[spec.subjectField] : inst->id);
 
-    std::shared_ptr<WorkComponent> root = ind.definition->cloneRoot();
-    std::vector<WorkItem*> cloned = allTasks(root.get());
+    const WorkflowDefinition* def = registry->get(spec.name);
+    trace.engine("DefinitionRegistry::get(\"" + def->getName() + "\")", "Prototype (PrototypeManager)", "");
+    std::shared_ptr<WorkComponent> root = def->cloneRoot();
     std::ostringstream cloneDetail;
-    cloneDetail << "deep copy of the definition: WorkStage::clone() copies each child; "
-                << cloned.size() << " task clones keep their IDs but are NEW objects";
-    trace.engine("WorkflowDefinition::cloneRoot()", "Prototype", cloneDetail.str());
-    trace.engine("WorkStage (Composite) / ManualTask, AutomatedTask, ApprovalTask (leaves)", "Composite",
-                 "the clone is a tree of stages and tasks behind the one WorkComponent interface");
+    cloneDetail << "deep copy: WorkStage::clone() copies each child (nested stages too), decorators clone what they "
+                   "wrap; " << allTasks(root.get()).size() << " NEW task objects with the same IDs";
+    trace.engine("WorkflowDefinition::cloneRoot()", "Prototype + Composite", cloneDetail.str());
 
     inst->workflow.reset(new WorkflowInstance(root, "Created"));
-    inst->processor.reset(new CommandProcessor());
-    trace.engine("new WorkflowInstance(root, \"Created\")", "Prototype (product)",
-                 "independent instance: its own tree, status and history");
-    trace.engine("new CommandProcessor()", "Command (Invoker)", "one undo history per instance");
+    inst->commands.reset(new CommandProcessor());
+    inst->mediator.reset(new ResourceCoordinator());
+    trace.engine("new WorkflowInstance / CommandProcessor / ResourceCoordinator", "Memento / Command / Mediator",
+                 "each instance gets its own tree, undo history and mediator");
+
+    inst->bus.reset(new WorkflowEventBus());
+    inst->activator.reset(new DependencyActivator(inst->bus.get()));
+    inst->audit.reset(new AuditLogger(inst->bus.get()));
+    inst->notifier.reset(new NotificationSender(inst->bus.get()));
+    inst->monitor.reset(new MonitoringCollector(inst->bus.get()));
+    trace.engine("new WorkflowEventBus + DependencyActivator, AuditLogger, NotificationSender, MonitoringCollector",
+                 "Observer", "listeners subscribe to the instance's own event bus");
 
     wire(*inst, trace);
-    Context ctx(*inst, trace, nullptr);
-    ind.scenario->configureInstance(ctx);
+    configure(*inst, trace);
     updateStatus(*inst);
-
-    inst->log.add("create", "", "", "Instance created for " + subject->name + " by cloning '" +
-                  ind.definition->getName() + "'", "info");
+    inst->bus->publish(Event(EventType::INSTANCE_CREATED, inst->id, "", "for " + inst->label));
+    trace.engine("WorkflowEventBus::publish(INSTANCE_CREATED)", "Observer (Subject)", "");
 
     std::string newId = inst->id;
     instanceOrder.push_back(newId);
     instances[newId] = std::move(inst);
     Instance& created = *instances[newId];
-
-    return json{{"ok", true}, {"message", newId + " created for " + subject->name + ". Press Start."},
-                {"trace", traceJson(trace.steps())}, {"console", console.lines()},
-                {"changes", json::array()}, {"instance", instanceView(created)}};
+    std::vector<Row> before = rowsOf(created.root());
+    return respond(created, true, newId + " created for " + created.label + ". Press Start.", false, trace, before,
+                   console.lines());
 }
 
 json EngineGateway::start(const std::string& instanceId) {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
-    Industry& ind = *inst.industry;
     Trace trace;
-    trace.pending("WorkflowManager::start(instanceId)", "Facade",
-                  "not yet integrated: it throws 'waiting for integration'; EngineGateway::start does the "
-                  "steps below (temporary)");
-
+    facadeStep(trace, "start(instanceId)");
+    std::vector<Row> before = rowsOf(inst.root());
     if (inst.started) {
-        inst.log.add("start", "", "", "Start refused: the instance is already running", "refused");
-        return json{{"ok", false}, {"message", "This instance has already been started."},
-                    {"trace", traceJson(trace.steps())}, {"console", console.lines()},
-                    {"changes", json::array()}, {"instance", instanceView(inst)}};
+        return respond(inst, false, "This instance has already been started.", false, trace, before, console.lines());
     }
 
-    std::vector<Row> before = rows(inst.root());
-    std::vector<WorkItem*> tasks = allTasks(inst.root());
-    trace.engine("WorkStage::createIterator() -> DepthFirstIterator", "Iterator",
-                 "walks every task of this instance's tree");
     std::vector<std::string> opened;
+    std::vector<TaskRef> tasks = allTasks(inst.root());
     for (size_t i = 0; i < tasks.size(); ++i) {
-        if (ind.coordinator->canBecomeAvailable(tasks[i]) && tasks[i]->makeAvailable()) {
-            opened.push_back(tasks[i]->getName());
+        // Same steps as WorkflowManager::start(): mediator check, then makeAvailable().
+        if (inst.mediator->canBecomeAvailable(tasks[i].item) && tasks[i].node->makeAvailable()) {
+            opened.push_back(tasks[i].item->getName());
         }
     }
-    trace.engine("ResourceCoordinator::canBecomeAvailable(task)", "Mediator",
-                 "true only for tasks without unfinished prerequisites");
-    trace.engine("WorkItem::makeAvailable()", "State",
+    trace.engine("WorkStage::createIterator() -> DepthFirstIterator", "Iterator", "walks every task of this instance");
+    trace.engine("ResourceCoordinator::canBecomeAvailable -> WorkComponent::makeAvailable()", "Mediator + State",
                  "CreatedState -> AvailableState for: " + join(opened, ", "));
     inst.started = true;
     updateStatus(inst);
-    trace.engine("WorkflowInstance::setStatus(\"Running\")", "instance", "");
-
-    json changes = json::array();
-    std::vector<Row> after = rows(inst.root());
-    for (size_t i = 0; i < after.size(); ++i) {
-        if (after[i].state != before[i].state) {
-            changes.push_back(json{{"task", after[i].id}, {"name", after[i].name},
-                                   {"from", before[i].state}, {"to", after[i].state}});
-        }
-    }
-    inst.log.add("start", "", "", "Started; available: " + join(opened, ", "), "done");
-    return json{{"ok", true}, {"message", inst.id + " started. Available now: " + join(opened, ", ")},
-                {"trace", traceJson(trace.steps())}, {"console", console.lines()},
-                {"changes", changes}, {"instance", instanceView(inst)}};
+    inst.bus->publish(Event(EventType::INSTANCE_STARTED, inst.id));
+    trace.engine("WorkflowEventBus::publish(INSTANCE_STARTED)", "Observer (Subject)", "");
+    std::vector<Row> seen = before;
+    publishChanges(inst, seen, trace, false);
+    return respond(inst, true, inst.id + " started. Available now: " + join(opened, ", "), false, trace, before,
+                   console.lines());
 }
 
-json EngineGateway::complete(const std::string& i, const std::string& t, const std::string& outcome) {
-    return act(i, t, "complete", "", outcome);
+json EngineGateway::complete(const std::string& i, const std::string& t, const std::string& branch) {
+    return act(i, t, "complete", "", branch);
 }
 
 json EngineGateway::getStatus(const std::string& instanceId) {
@@ -478,6 +663,7 @@ json EngineGateway::getStatus(const std::string& instanceId) {
 
 json EngineGateway::makeAvailable(const std::string& i, const std::string& t) { return act(i, t, "makeAvailable", "", ""); }
 json EngineGateway::assignTo(const std::string& i, const std::string& t, const std::string& p) { return act(i, t, "assign", p, ""); }
+json EngineGateway::autoAssign(const std::string& i, const std::string& t) { return act(i, t, "autoAssign", "", ""); }
 json EngineGateway::startTask(const std::string& i, const std::string& t) { return act(i, t, "start", "", ""); }
 json EngineGateway::execute(const std::string& i, const std::string& t) { return act(i, t, "execute", "", ""); }
 json EngineGateway::approve(const std::string& i, const std::string& t) { return act(i, t, "approve", "", ""); }
@@ -486,34 +672,35 @@ json EngineGateway::cancel(const std::string& i, const std::string& t) { return 
 json EngineGateway::escalate(const std::string& i, const std::string& t) { return act(i, t, "escalate", "", ""); }
 
 // ===========================================================================
-// One lifecycle action, wrapped in a command
+// One lifecycle action
 // ===========================================================================
 
 json EngineGateway::act(const std::string& instanceId, const std::string& taskId, const std::string& action,
-                        const std::string& participantId, const std::string& outcome) {
+                        const std::string& participantId, const std::string& branch) {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
-    Industry& ind = *inst.industry;
-    WorkItem* item = findTask(inst.root(), taskId);
-    if (item == nullptr) throw GatewayError(404, "No task '" + taskId + "' in " + instanceId);
+    ScenarioRuntime& scenario = *inst.scenario;
+    TaskRef task = findTask(inst.root(), taskId);
+    if (task.node == nullptr) throw GatewayError(404, "No task '" + taskId + "' in " + instanceId);
+    if (!isAction(action)) throw GatewayError(400, "Unknown action '" + action + "'");
 
     Trace trace;
-    Context ctx(inst, trace, item);
-    facadeStep(trace, action);
-    const std::string name = item->getName();
-    const std::string before = stateOf(item);
-    std::vector<Row> rowsBefore = rows(inst.root());
+    Context ctx(inst, trace, branch);
+    facadeStep(trace, operationName(action));
+    const std::string name = task.item->getName();
+    const std::string before = stateOf(task.node);
+    std::vector<Row> rowsBefore = rowsOf(inst.root());
 
     // --- checks that refuse without running a command -------------------------------
     std::string refusal;
     if (action == "makeAvailable") {
-        bool can = ind.coordinator->canBecomeAvailable(item);
+        bool can = inst.mediator->canBecomeAvailable(task.item);
         std::vector<std::string> waiting;
-        std::vector<std::string> prereq = ind.prerequisites(taskId);
-        for (size_t i = 0; i < prereq.size(); ++i) {
-            WorkItem* p = findTask(inst.root(), prereq[i]);
-            if (p != nullptr && !p->isComplete()) waiting.push_back(p->getName() + " (" + stateOf(p) + ")");
+        const TaskSpec* spec = scenario.spec().task(taskId);
+        for (size_t i = 0; spec != nullptr && i < spec->dependsOn.size(); ++i) {
+            TaskRef p = findTask(inst.root(), spec->dependsOn[i]);
+            if (p.item != nullptr && !p.item->isComplete()) waiting.push_back(p.item->getName() + " (" + stateOf(p.node) + ")");
         }
         trace.engine("ResourceCoordinator::canBecomeAvailable(" + name + ")", "Mediator",
                      can ? "true: every prerequisite is complete" : "false: waiting for " + join(waiting, ", "));
@@ -522,225 +709,298 @@ json EngineGateway::act(const std::string& instanceId, const std::string& taskId
                       " is complete. The ResourceCoordinator (Mediator) refused.";
         }
     } else if (action == "assign") {
-        if (ind.people->find(participantId) == nullptr) throw GatewayError(400, "Pick a participant to assign.");
+        if (scenario.participant(participantId) == nullptr) throw GatewayError(400, "Pick a participant to assign.");
+    } else if (action == "autoAssign") {
+        if (scenario.strategyFor(taskId) == nullptr) {
+            refusal = "\"" + name + "\" has no assignment strategy in its scenario. Assign it manually.";
+        }
     } else if (action == "start") {
-        std::string reason;
-        if (!ind.scenario->canStart(ctx, taskId, reason)) {
-            trace.scenario(ind.scenario->key() == "healthcare" ? "HealthcareScenario::canStart"
-                                                                : "EducationScenario::canStart",
-                           "industry rule", reason);
-            refusal = reason;
-        }
-    } else if (action != "execute" && action != "complete" && action != "approve" && action != "reject" &&
-               action != "cancel" && action != "escalate") {
-        throw GatewayError(400, "Unknown action '" + action + "'");
-    }
-    if (!refusal.empty()) {
-        inst.log.add(action, taskId, name, refusal, "refused");
-        return json{{"ok", false}, {"message", refusal}, {"trace", traceJson(trace.steps())},
-                    {"console", console.lines()}, {"changes", json::array()}, {"instance", instanceView(inst)}};
-    }
-
-    // --- run it as a command through the real CommandProcessor ----------------------
-    bool executed = false;
-    Data dataBefore = inst.data;
-    Instance* instPtr = &inst;
-    WebCommand::UndoHook hook = [this, instPtr, dataBefore]() { this->undoSideEffects(*instPtr, dataBefore); };
-    WebCommand::Action run = [&]() -> bool { return this->perform(inst, ctx, action, participantId, outcome); };
-
-    std::string designed = designedCommand(action);
-    trace.temporary("WebCommand(\"" + action + "\")", "Command (ConcreteCommand)",
-                    designed.empty()
-                        ? "the team has no command for " + operationName(action) + " yet; this web command wraps it"
-                        : "stands in for " + designed + " (Member 5), which does not compile yet");
-    std::unique_ptr<WorkflowCommand> command(new WebCommand(action, inst.root(), run, &executed, hook));
-    inst.processor->run(std::move(command));
-    trace.engine("CommandProcessor::run(command)", "Command (Invoker)",
-                 executed ? "execute() returned true -> pushed onto this instance's undo history"
-                          : "execute() returned false -> not pushed (nothing to undo)");
-    if (executed) ++inst.commandDepth;
-
-    // --- report ----------------------------------------------------------------------
-    std::vector<Row> rowsAfter = rows(inst.root());
-    json changes = json::array();
-    std::vector<std::string> changeText;
-    for (size_t i = 0; i < rowsAfter.size() && i < rowsBefore.size(); ++i) {
-        if (rowsAfter[i].state != rowsBefore[i].state || rowsAfter[i].assignee != rowsBefore[i].assignee) {
-            changes.push_back(json{{"task", rowsAfter[i].id}, {"name", rowsAfter[i].name},
-                                   {"from", rowsBefore[i].state}, {"to", rowsAfter[i].state}});
-            changeText.push_back(rowsAfter[i].name + ": " + rowsBefore[i].state + " -> " + rowsAfter[i].state);
+        // Generic resource rule: a task that needs a resource only starts once the Mediator granted one.
+        const TaskSpec* spec = scenario.spec().task(taskId);
+        if (spec != nullptr && !spec->resource.empty() && inst.data.count("resourceId." + taskId) == 0) {
+            refusal = "\"" + name + "\" needs a resource, and the ResourceCoordinator has not granted one for this "
+                      "assignment. Escalate the task and reassign it to someone whose resource is free.";
+            trace.scenario("resource rule (from the spec)", "Mediator", refusal);
         }
     }
+    if (!refusal.empty()) return respond(inst, false, refusal, false, trace, rowsBefore, console.lines());
+
+    bool ok = perform(inst, ctx, task, action, participantId);
+
+    std::vector<Row> seen = rowsBefore;
+    if (ok) publishChanges(inst, seen, trace, false);
+    syncWorkload(inst, &trace);
     updateStatus(inst);
 
+    // Decorator effect: the real AuditDecorator writes one line per attempt to its sink (std::cout).
+    json consoleLines = console.lines();
+    for (size_t i = 0; i < consoleLines.size(); ++i) {
+        std::string line = consoleLines[i];
+        if (line.compare(0, taskId.size() + 2, taskId + ": ") == 0) {
+            trace.engine("AuditDecorator (on " + name + ")", "Decorator", "audit line: \"" + line + "\"");
+        }
+    }
+
     std::string message;
-    if (executed) {
-        std::string after = stateOf(item);
+    if (ok) {
+        std::string after = stateOf(task.node);
         message = name + ": " + operationName(action) + (before == after ? " ran (still " + after + ")"
                                                                           : " moved it " + before + " -> " + after);
         if (!ctx.notices.empty()) message += ". " + join(ctx.notices, " ");
     } else if (action == "execute") {
         message = "Not allowed: execute() only runs a task that is InProgress. \"" + name + "\" is " + before +
                   ", so WorkItem::checkReady() returned false and the Template Method stopped.";
+    } else if (action == "autoAssign") {
+        message = "Not assigned: the " + scenario.strategyName(taskId) + " strategy found no one, or \"" + name +
+                  "\" is in state " + before + ", which does not allow assignment.";
     } else {
         message = "Not allowed: " + operationName(action) + " is not permitted while \"" + name + "\" is in state " +
-                  before + ". " + before + "State refused it (returned false); nothing changed.";
+                  before + ". The engine refused it (returned false); nothing changed.";
     }
-
-    HistoryEntry& entry = inst.log.add(action, taskId, name,
-                                       message,
-                                       executed ? "done" : "refused");
-    entry.changes = changeText;
-    entry.onCommandStack = executed;
-
-    return json{{"ok", executed}, {"warning", ctx.warning}, {"message", message}, {"trace", traceJson(trace.steps())},
-                {"console", console.lines()}, {"changes", changes}, {"instance", instanceView(inst)}};
+    return respond(inst, ok, message, ctx.warning, trace, rowsBefore, consoleLines);
 }
 
-bool EngineGateway::perform(Instance& inst, Context& ctx, const std::string& action,
-                            const std::string& participantId, const std::string& outcome) {
-    Industry& ind = *inst.industry;
-    WorkItem* item = ctx.target;
-    Trace& trace = ctx.trace();
-    const std::string id = item->getId();
-    const std::string name = item->getName();
-    const std::string from = stateOf(item);
-    ParticipantEntry* who = action == "assign" ? ind.people->find(participantId) : nullptr;
+bool EngineGateway::perform(Instance& inst, Context& ctx, const TaskRef& task, const std::string& action,
+                            const std::string& participantId) {
+    ScenarioRuntime& scenario = *inst.scenario;
+    Trace& trace = ctx.tr;
+    const std::string id = task.item->getId();
+    const std::string name = task.item->getName();
+    const std::string from = stateOf(task.node);
 
     bool ok = false;
-    if (action == "makeAvailable") ok = item->makeAvailable();
-    else if (action == "assign") ok = item->assignTo(PendingIntegration::chooseParticipant(item, who->participant.get(), trace));
-    else if (action == "start") ok = item->start();
-    else if (action == "complete") ok = item->complete();
-    else if (action == "approve") ok = item->approve();
-    else if (action == "reject") ok = item->reject();
-    else if (action == "cancel") ok = item->cancel();
-    else if (action == "escalate") ok = item->escalate();
-    else if (action == "execute") ok = runTemplateMethod(inst, ctx);
-
-    const std::string to = stateOf(item);
-    if (action != "execute") {
+    std::string assignee = participantId;
+    if (action == "execute") {
+        ok = runTemplateMethod(inst, ctx, task);
+    } else if (action == "autoAssign") {
+        AssignmentStrategy* strategy = scenario.strategyFor(id);
+        TaskRouter router(strategy);
+        ok = router.route(task.item);
+        Participant* chosen = task.node->getAssignee();
+        trace.engine("TaskRouter::route(" + name + ") -> " + scenario.strategyName(id) + "::route()", "Strategy",
+                     ok ? "chose " + chosen->getName() + " (" + chosen->getRole() + ") and called WorkItem::assignTo()"
+                        : "returned false: nobody suitable, or the task's state refused assignTo()");
+        if (ok) {
+            trace.engine(name + ".assignTo(" + chosen->getName() + ")", "State",
+                         "WorkItem delegates to " + from + "State -> AssignedState. Not undoable: the strategy assigns "
+                         "the task directly, not through AssignCommand");
+            assignee = chosen->getID();
+        }
+    } else {
+        Participant* who = action == "assign" ? scenario.participant(participantId) : nullptr;
+        std::string className;
+        WorkflowCommand* command = commandFor(action, task.node, who, className);
+        ok = runCommand(inst, command, className + "(" + id + ")");
+        std::string to = stateOf(task.node);
+        trace.engine(className + "(" + name + ") -> CommandProcessor::run()", "Command",
+                     ok ? "execute() returned true: pushed onto this instance's history (getHistory())"
+                        : "execute() returned false: not pushed, nothing to undo");
+        if (!task.decorators.empty()) {
+            trace.engine(join(task.decorators, " -> ") + " -> " + kindOf(task) + " task", "Decorator",
+                         "the command acts on the outermost decorator, which forwards to the task");
+        }
         trace.engine(name + "." + operationName(action), "State",
                      ok ? "WorkItem delegates to " + from + "State -> transition to " + to + "State"
                         : "WorkItem delegates to " + from + "State, which returned false: not allowed in " + from);
     }
     if (!ok) return false;
 
-    if (action == "assign" && who != nullptr) {
-        trace.engine("Participant", "Mediator (colleague)", who->name + " (" + who->role + ") is now the assignee");
-        Resource* resource = ind.scenario->resourceFor(id, *who);
-        if (resource != nullptr) {
-            ind.coordinator->release(item);
-            inst.data.erase("resource." + id);
-            inst.data.erase("resourceBy." + id);
-            bool granted = ind.coordinator->requestResource(item, resource);
-            trace.engine("ResourceCoordinator::requestResource(" + name + ", " + who->name + "'s slots)", "Mediator",
-                         granted ? "GRANTED: Resource::isFree() returned true"
-                                 : "REFUSED: Resource::isFree() returned false (no free slot)");
-            if (granted) {
-                inst.data["resource." + id] = who->name;
-                inst.data["resourceBy." + id] = who->id;
-                ctx.notices.push_back("Slot granted with " + who->name + ".");
-            } else {
-                inst.data["refused." + id] = who->name;
-                ctx.warning = true;
-                ctx.notices.push_back("BUT the ResourceCoordinator refused a slot with " + who->name +
-                                      " (no free slot). Escalate this task, then reassign it to another GP.");
-            }
-        }
-    }
-
-    if (from != to) {
-        ind.scenario->afterTransition(ctx, id, action, to, outcome);
-        PendingIntegration::publishTransition(item, from, to, trace);
-    }
+    if (action == "assign" || action == "autoAssign") afterAssign(inst, ctx, task, assignee);
+    const std::string to = stateOf(task.node);
+    if (from != to) afterTransition(inst, ctx, task, to);
     return true;
 }
 
-bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx) {
-    Industry& ind = *inst.industry;
-    WorkItem* item = ctx.target;
-    Trace& trace = ctx.trace();
-    const std::string id = item->getId();
-    const std::string name = item->getName();
-    const std::string from = stateOf(item);
-    const std::string kind = ind.kind(id);
+void EngineGateway::afterAssign(Instance& inst, Context& ctx, const TaskRef& task, const std::string& participantId) {
+    ScenarioRuntime& scenario = *inst.scenario;
+    const std::string id = task.item->getId();
+    const std::string name = task.item->getName();
+    Participant* who = scenario.participant(participantId);
+    if (who == nullptr) return;
+    ctx.tr.engine("Participant " + who->getName(), "Mediator (colleague)", who->getRole() + " is now the assignee");
 
-    bool ready = item->getState()->canExecute();
+    const TaskSpec* spec = scenario.spec().task(id);
+    if (spec == nullptr || spec->resource.empty()) return;
+    Resource* resource = scenario.resourceFor(id, participantId);
+    if (inst.data.count("resourceId." + id)) releaseResource(inst, id, ctx.tr, "reassigned");
+    if (resource == nullptr) {
+        inst.data["refused." + id] = who->getName();
+        ctx.warning = true;
+        ctx.notices.push_back(who->getName() + " has no resource of their own for this task. Escalate, then reassign.");
+        return;
+    }
+    bool granted = inst.mediator->requestResource(task.item, resource);
+    std::ostringstream places;
+    places << resource->getAvailable() << " of " << resource->getCapacity() << " places now free";
+    ctx.tr.engine("ResourceCoordinator::requestResource(" + name + ", " + resource->getName() + ")", "Mediator",
+                  granted ? "GRANTED: Resource::take() - " + places.str()
+                          : "REFUSED: Resource::isFree() is false - " + places.str());
+    if (granted) {
+        inst.data["resource." + id] = resource->getName();
+        inst.data["resourceId." + id] = scenario.resourceIdOf(resource);
+        inst.data["resourceBy." + id] = who->getID();
+        inst.data.erase("refused." + id);
+        ctx.notices.push_back("Resource granted: " + resource->getName() + " (" + places.str() + ").");
+    } else {
+        inst.data["refused." + id] = resource->getName();
+        ctx.warning = true;
+        ctx.notices.push_back("BUT the ResourceCoordinator refused " + resource->getName() +
+                              " (no free place). Escalate this task, then reassign it.");
+    }
+}
+
+void EngineGateway::afterTransition(Instance& inst, Context& ctx, const TaskRef& task, const std::string& newState) {
+    const std::string id = task.item->getId();
+    if (newState == "Completed") {
+        if (inst.scenario->spec().decisionAfter(id) != nullptr) decide(inst, ctx, id);
+        applyEffects(inst, ctx, id, "onComplete");
+    } else if (newState == "Rejected") {
+        applyEffects(inst, ctx, id, "onReject");
+    } else if (newState == "Cancelled") {
+        releaseResource(inst, id, ctx.tr, "the holder was cancelled");
+        applyEffects(inst, ctx, id, "onCancel");
+    }
+}
+
+void EngineGateway::decide(Instance& inst, Context& ctx, const std::string& taskId) {
+    const DecisionSpec& d = *inst.scenario->spec().decisionAfter(taskId);
+    std::string reason;
+    std::string ruled = d.rules.empty() ? std::string() : branchByRules(d, inst.data, reason);
+    std::string chosen;
+    std::string how;
+    bool valid = false;
+    for (size_t b = 0; b < d.branches.size(); ++b) if (d.branches[b].id == ctx.branchChoice) valid = true;
+    if (valid) {
+        chosen = ctx.branchChoice;
+        how = d.mode == "rule" ? (chosen == ruled ? "rule result confirmed by the user" : "MANUAL OVERRIDE of the rule (" + reason + ")")
+                               : "chosen by the user at runtime";
+    } else if (d.mode == "rule") {
+        chosen = ruled;
+        how = "decided by the rule: " + reason;
+    } else {
+        chosen = !ruled.empty() ? ruled : d.defaultBranch;
+        how = "no branch chosen in the UI: default branch";
+    }
+
+    const BranchSpec* taken = nullptr;
+    for (size_t b = 0; b < d.branches.size(); ++b) if (d.branches[b].id == chosen) taken = &d.branches[b];
+    if (taken == nullptr) taken = &d.branches[0];
+    inst.data[d.id] = taken->id;
+    ctx.tr.scenario("Decision '" + d.label + "' (from the spec)", "routing (decision)",
+                    "branch '" + taken->label + "' - " + how + "; the other branches are cancelled");
+    ctx.notices.push_back("Decision \"" + d.label + "\": " + taken->label + " (" + how + ").");
+    for (size_t b = 0; b < d.branches.size(); ++b) {
+        if (&d.branches[b] == taken) continue;
+        for (size_t t = 0; t < d.branches[b].tasks.size(); ++t) {
+            TaskRef ref = findTask(inst.root(), d.branches[b].tasks[t]);
+            if (ref.node == nullptr) continue;
+            std::string before = stateOf(ref.node);
+            bool ok = runCommand(inst, new CancelCommand(ref.node), "CancelCommand(" + ref.item->getId() + ")");
+            ctx.tr.engine("CancelCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
+                          ok ? before + "State -> CancelledState (branch '" + d.branches[b].label + "' not taken)"
+                             : before + "State refused cancel()");
+        }
+    }
+}
+
+void EngineGateway::applyEffects(Instance& inst, Context& ctx, const std::string& taskId, const std::string& when) {
+    const TaskSpec* spec = inst.scenario->spec().task(taskId);
+    if (spec == nullptr) return;
+    const EffectSpec& e = when == "onComplete" ? spec->onComplete : when == "onReject" ? spec->onReject : spec->onCancel;
+    if (e.empty()) return;
+    ctx.tr.scenario(spec->name + " " + when + " (from the spec)", "scenario rule",
+                    "effects run with real engine calls; they do not cascade");
+    for (CaseData::const_iterator it = e.set.begin(); it != e.set.end(); ++it) inst.data[it->first] = fillTemplate(it->second, inst.data);
+    if (!e.outcome.empty()) inst.data["outcome"] = fillTemplate(e.outcome, inst.data);
+    for (size_t i = 0; i < e.release.size(); ++i) releaseResource(inst, e.release[i], ctx.tr, spec->name + " " + when);
+    for (size_t i = 0; i < e.cancel.size(); ++i) {
+        TaskRef ref = findTask(inst.root(), e.cancel[i]);
+        if (ref.node == nullptr) continue;
+        std::string before = stateOf(ref.node);
+        bool ok = runCommand(inst, new CancelCommand(ref.node), "CancelCommand(" + ref.item->getId() + ")");
+        ctx.tr.engine("CancelCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
+                      ok ? before + "State -> CancelledState" : before + "State refused cancel(); left as " + before);
+        if (ok) releaseResource(inst, e.cancel[i], ctx.tr, "the holder was cancelled");
+    }
+    for (size_t i = 0; i < e.unlock.size(); ++i) {
+        TaskRef ref = findTask(inst.root(), e.unlock[i]);
+        if (ref.node == nullptr) continue;
+        std::string before = stateOf(ref.node);
+        bool ok = runCommand(inst, new MakeAvailableCommand(ref.node), "MakeAvailableCommand(" + ref.item->getId() + ")");
+        ctx.tr.engine("MakeAvailableCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
+                      ok ? before + "State -> AvailableState" : before + "State refused makeAvailable()");
+    }
+}
+
+bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx, const TaskRef& task) {
+    Trace& trace = ctx.tr;
+    const std::string name = task.item->getName();
+    const std::string from = stateOf(task.node);
+    const std::string kind = kindOf(task);
+
+    trace.pending("ExecuteCommand", "Command",
+                  "the engine has no command for execute(), so it is called directly and cannot be undone");
+    bool ready = task.node->getState()->canExecute();
     if (!ready) {
-        item->execute();   // let the engine itself refuse: checkReady() is false
+        task.node->execute();   // let the engine itself refuse: checkReady() is false
         trace.engine(name + ".execute()", "Template Method",
                      "checkReady() -> " + from + "State::canExecute() is false, so the skeleton returns before "
                      "onEnter()/perform()");
         return false;
     }
 
-    const TaskInfo* info = ind.info(id);
-    TestConnector* connector = nullptr;
-    if (kind == "automated" && info != nullptr && !info->connector.empty()) {
-        connector = ind.testConnectors[info->connector].get();
-        connector->setContext(ind.scenario->connectorContext(ctx, id));
-        trace.temporary("Test adapter context", "Adapter",
-                        "the stub ConnectorRequest carries no data, so the case data is handed to the adapter first");
-    }
-
-    std::vector<std::string> reached;
-    if (kind == "approval") {
-        Trace* t = &trace;
-        ChainTrace::setSink([t, &reached](const std::string& handler, double limit, double value, bool isFinal) {
-            std::ostringstream detail;
-            detail << "request value " << value << " vs limit " << limit << ": "
-                   << (value <= limit ? (isFinal ? "approves (end of chain)" : "approves")
-                                      : (isFinal ? "REJECTS (end of chain, over limit)" : "over limit -> passes to successor"));
-            t->engine((isFinal ? "FinalApproverHandler [" : "RoleApproverHandler [") + handler + "]",
-                      "Chain of Responsibility", detail.str());
-            reached.push_back(handler);
-        });
-    }
-
-    item->execute();   // Template Method: checkReady -> onEnter -> perform -> recordResult
-    ChainTrace::clearSink();
-    const std::string to = stateOf(item);
+    task.node->execute();   // Template Method: checkReady -> onEnter -> perform -> recordResult
+    const std::string to = stateOf(task.node);
 
     if (kind == "manual") {
         trace.engine(name + ".execute()", "Template Method",
                      "checkReady() true -> onEnter() -> ManualTask::perform() returns false (waits for its assignee) "
                      "-> recordResult(false): stays " + to + "; finish it with complete()");
     } else if (kind == "automated") {
+        bool succeeds = asAutomatedTask(task)->getStepSucceeds();
         trace.engine(name + ".execute()", "Template Method",
-                     "checkReady() true -> onEnter() -> AutomatedTask::perform() -> callConnector()");
-        trace.temporary("ConnectorManager::get(\"" + (info ? info->connector : std::string()) + "\") (web/temporary_stubs)",
-                        "Adapter", "stub manager until Member 7's ConnectorManager exists");
-        if (connector != nullptr) {
-            trace.temporary(info->connector == "medical-aid" ? "TestPaymentConnector -> " + connector->adapteeName()
-                            : info->connector == "messaging" ? "TestMessagingConnector -> " + connector->adapteeName()
-                                                             : "TestStudentRecordsConnector -> " + connector->adapteeName(),
-                            "Adapter", connector->lastResult());
-            ctx.notices.push_back(connector->lastResult() + ".");
-        }
-        if (to != "Completed") ctx.warning = true;
-        trace.engine("WorkItem::recordResult(" + std::string(to == "Completed" ? "true" : "false") + ")",
-                     "Template Method",
-                     to == "Completed" ? "connector succeeded -> complete(): InProgressState -> CompletedState"
-                                       : "connector failed -> stays InProgress. Exception path: escalate, then "
-                                         "reassign to a person who completes it manually.");
+                     std::string("checkReady() true -> onEnter() -> AutomatedTask::perform() returns stepSucceeds = ") +
+                         (succeeds ? "true -> recordResult(true) -> complete(): InProgressState -> CompletedState"
+                                   : "false -> recordResult(false): stays InProgress. Exception path: escalate, "
+                                     "then reassign to a person who completes it by hand."));
+        ctx.notices.push_back(succeeds ? "Automated step succeeded." : "Automated step FAILED: the task stays InProgress.");
+        if (!succeeds) ctx.warning = true;
     } else {
+        // The chain's result as ApprovalTask kept it (path, outcome, decider): no web-side tracing needed.
+        const ApprovalTask& approval = *asApprovalTask(task);
+        std::vector<ChainLevelInfo> levels = inst.scenario->chainOf(task.item->getId());
         trace.engine(name + ".execute()", "Template Method",
-                     "checkReady() true -> onEnter() -> ApprovalTask::perform() sends an ApprovalRequest(value) to "
-                     "the first handler");
-        if (!reached.empty()) {
-            ctx.notices.push_back("The request travelled " + join(reached, " -> ") + "; " + reached.back() +
-                                  (to == "Completed" ? " approved it." : to == "Rejected" ? " rejected it." : " decided."));
+                     "checkReady() true -> onEnter() -> ApprovalTask::perform() sends an ApprovalRequest(value) down "
+                     "the chain (ApprovalHandler::handleRequest -> tryDecide at each level) and keeps the result");
+        const std::vector<std::string>& path = approval.getChainPath();
+        std::ostringstream value;
+        value << approval.getRequestValue();
+        for (size_t i = 0; i < path.size(); ++i) {
+            bool last = i + 1 == path.size();
+            trace.engine("ApprovalHandler [" + path[i] + "]", "Chain of Responsibility",
+                         "request value " + value.str() + (last ? " stopped here" : ": over this level's limit, passed on"));
         }
+        if (approval.wasChainDecided()) {
+            const std::string& decider = approval.getChainDecidedBy();
+            std::string handlerClass = !levels.empty() && decider == levels.back().label ? "FinalApproverHandler"
+                                                                                       : "RoleApproverHandler";
+            trace.engine(handlerClass + " [" + decider + "]::tryDecide", "Chain of Responsibility",
+                         approval.wasChainApproved() ? "within its limit: approves" : "over the final limit: rejects");
+            ctx.notices.push_back("The request travelled " + join(path, " -> ") + "; " + decider + " " +
+                                  approval.getChainOutcome() + " it.");
+        } else {
+            ctx.notices.push_back("Chain outcome: " + approval.getChainOutcome() + ".");
+        }
+        trace.engine("ApprovalTask::getChainPath / getChainOutcome / getChainDecidedBy", "Chain of Responsibility",
+                     "outcome '" + approval.getChainOutcome() + "' read from the result ApprovalTask kept from the "
+                     "ApprovalRequest");
         if (to == "Rejected") ctx.warning = true;
         trace.engine(name + ".approve() / reject()", "State",
-                     "called by the deciding handler: " + from + "State -> " + to + "State");
+                     "called by the deciding handler on the task itself (bypassing its decorators): " + from +
+                         "State -> " + to + "State");
     }
 
-    if (from != to) {
-        ind.scenario->afterTransition(ctx, id, "execute", to, "");
-        PendingIntegration::publishTransition(item, from, to, trace);
-    }
+    if (from != to) afterTransition(inst, ctx, task, to);
     return true;
 }
 
@@ -748,86 +1008,31 @@ bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx) {
 // Undo (Command) and snapshots (Memento)
 // ===========================================================================
 
-void EngineGateway::undoSideEffects(Instance& inst, const Data& dataBefore) {
-    Industry& ind = *inst.industry;
-    Data now = inst.data;
-    Data restored = dataBefore;
-
-    // Resource allocations live in the Mediator, outside the tree, so put them back too.
-    for (Data::const_iterator it = now.begin(); it != now.end(); ++it) {
-        if (it->first.compare(0, 9, "resource.") != 0) continue;
-        std::string task = it->first.substr(9);
-        Data::const_iterator old = dataBefore.find(it->first);
-        if (old == dataBefore.end() || old->second != it->second) {
-            WorkItem* item = findTask(inst.root(), task);
-            if (item != nullptr) ind.coordinator->release(item);
-            if (activeTrace) activeTrace->engine("ResourceCoordinator::release(" + task + ")", "Mediator",
-                                                 "undo hands back the slot this action obtained");
-        }
-    }
-    for (Data::const_iterator it = dataBefore.begin(); it != dataBefore.end(); ++it) {
-        if (it->first.compare(0, 9, "resource.") != 0) continue;
-        std::string task = it->first.substr(9);
-        Data::const_iterator current = now.find(it->first);
-        if (current != now.end() && current->second == it->second) continue;
-        WorkItem* item = findTask(inst.root(), task);
-        ParticipantEntry* who = ind.people->find(restored["resourceBy." + task]);
-        Resource* resource = who != nullptr ? ind.scenario->resourceFor(task, *who) : nullptr;
-        bool granted = item != nullptr && resource != nullptr && ind.coordinator->requestResource(item, resource);
-        if (!granted) {
-            restored.erase(it->first);
-            restored.erase("resourceBy." + task);
-        }
-        if (activeTrace) activeTrace->engine("ResourceCoordinator::requestResource(" + task + ")", "Mediator",
-                                             granted ? "undo re-obtains the slot held before" : "undo could not re-obtain the slot");
-    }
-    inst.data = restored;
-}
-
 json EngineGateway::undo(const std::string& instanceId) {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
     Trace trace;
-    trace.pending("WorkflowManager", "Facade", "no undo() on the facade yet; EngineGateway::undo (temporary)");
-    std::vector<Row> before = rows(inst.root());
-    bool had = inst.commandDepth > 0;
+    facadeStep(trace, "undo (not offered by the facade)");
+    std::vector<Row> before = rowsOf(inst.root());
+    bool had = !inst.commands->getHistory().empty();
+    std::string label = had && !inst.commandLabels.empty() ? inst.commandLabels.back() : std::string();
 
-    activeTrace = &trace;
-    inst.processor->undo();
-    activeTrace = nullptr;
+    inst.commands->undo();
+    if (had && !inst.commandLabels.empty()) inst.commandLabels.pop_back();
     trace.engine("CommandProcessor::undo()", "Command (Invoker)",
-                 had ? "popped the latest command and called its undo()"
-                     : "history is empty: prints 'No commands to undo.'");
-
-    std::string message;
+                 had ? "popped " + label + " and called its undo()" : "history is empty: nothing to undo");
     if (had) {
-        --inst.commandDepth;
-        trace.temporary("WebCommand::undo()", "Command (ConcreteCommand)",
-                        "WorkComponent::restoreState(state, assignee) on every task - the contract's undo back door "
-                        "(no hooks, no transitions)");
-        HistoryEntry* undone = inst.log.markLatestUndone();
-        message = "Undid " + (undone ? undone->action + " on " + (undone->taskName.empty() ? "the instance" : undone->taskName)
-                                     : std::string("the last action"));
-    } else {
-        message = "Nothing to undo for " + inst.id + ".";
+        trace.engine(label + ".undo()", "Command (ConcreteCommand)",
+                     "WorkComponent::restoreState(previous state, previous assignee) on THIS task only; "
+                     "effects on other tasks or resources are not undone by the engine's commands");
     }
-
-    std::vector<Row> after = rows(inst.root());
-    json changes = json::array();
-    std::vector<std::string> changeText;
-    for (size_t i = 0; i < after.size() && i < before.size(); ++i) {
-        if (after[i].state != before[i].state || after[i].assignee != before[i].assignee) {
-            changes.push_back(json{{"task", after[i].id}, {"name", after[i].name},
-                                   {"from", before[i].state}, {"to", after[i].state}});
-            changeText.push_back(after[i].name + ": " + before[i].state + " -> " + after[i].state);
-        }
-    }
+    std::vector<Row> seen = before;
+    publishChanges(inst, seen, trace, true);
+    syncWorkload(inst, &trace);
     updateStatus(inst);
-    HistoryEntry& entry = inst.log.add("undo", "", "", message, had ? "info" : "refused");
-    entry.changes = changeText;
-    return json{{"ok", had}, {"message", message}, {"trace", traceJson(trace.steps())},
-                {"console", console.lines()}, {"changes", changes}, {"instance", instanceView(inst)}};
+    std::string message = had ? "Undid " + label + "." : "Nothing to undo for " + inst.id + ".";
+    return respond(inst, had, message, false, trace, before, console.lines());
 }
 
 json EngineGateway::snapshot(const std::string& instanceId) {
@@ -835,191 +1040,267 @@ json EngineGateway::snapshot(const std::string& instanceId) {
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
     Trace trace;
+    std::vector<Row> before = rowsOf(inst.root());
+    inst.workflow->setData(inst.data);
     std::shared_ptr<InstanceSnapshot> snap = inst.workflow->createSnapshot();
     inst.snapshots.save(snap);
-    inst.snapshotData.push_back(inst.data);
     std::ostringstream label;
-    label << "#" << inst.snapshotData.size() << " at " << nowLabel() << " - " << snap->label();
+    label << "#" << inst.snapshotLabels.size() + 1 << " at " << nowLabel() << " - " << snap->label();
     inst.snapshotLabels.push_back(label.str());
-    trace.engine("WorkflowInstance::createSnapshot()", "Memento (Originator)",
-                 "copies status and clones the whole tree (Prototype) into an InstanceSnapshot");
+    trace.engine("WorkflowInstance::setData + createSnapshot()", "Memento (Originator)",
+                 "copies the status and case data and clones the whole tree (Prototype) into an InstanceSnapshot");
     trace.engine("SnapshotHistory::save(snapshot)", "Memento (Caretaker)", "stores it without reading it");
-    trace.temporary("case-data copy", "Memento",
-                    "WorkflowInstance::data has no accessors, so the gateway keeps the case data beside the snapshot");
-    inst.log.add("snapshot", "", "", "Snapshot " + label.str(), "info");
-    return json{{"ok", true}, {"message", "Snapshot " + label.str() + " saved."}, {"trace", traceJson(trace.steps())},
-                {"console", console.lines()}, {"changes", json::array()}, {"instance", instanceView(inst)}};
+    inst.bus->publish(Event(EventType::EXTERNAL_EVENT, inst.id, "", "snapshot " + label.str()));
+    return respond(inst, true, "Snapshot " + label.str() + " saved.", false, trace, before, console.lines());
 }
 
 json EngineGateway::restoreSnapshot(const std::string& instanceId) {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
-    Industry& ind = *inst.industry;
+    ScenarioRuntime& scenario = *inst.scenario;
     Trace trace;
+    std::vector<Row> before = rowsOf(inst.root());
 
     std::shared_ptr<InstanceSnapshot> snap = inst.snapshots.latest();
-    if (!snap) {
-        inst.log.add("restore", "", "", "Restore refused: no snapshot taken yet", "refused");
-        return json{{"ok", false}, {"message", "Take a snapshot first."}, {"trace", traceJson(trace.steps())},
-                    {"console", console.lines()}, {"changes", json::array()}, {"instance", instanceView(inst)}};
-    }
+    if (!snap) return respond(inst, false, "Take a snapshot first.", false, trace, before, console.lines());
     trace.engine("SnapshotHistory::latest()", "Memento (Caretaker)", "hands back the newest snapshot");
 
-    std::vector<Row> before = rows(inst.root());
-    for (Data::const_iterator it = inst.data.begin(); it != inst.data.end(); ++it) {
-        if (it->first.compare(0, 9, "resource.") != 0) continue;
-        WorkItem* old = findTask(inst.root(), it->first.substr(9));
-        if (old != nullptr) ind.coordinator->release(old);
-        trace.engine("ResourceCoordinator::release(" + it->first.substr(9) + ")", "Mediator",
-                     "slot allocations are outside the snapshot, so the old tree's slot is handed back");
-    }
+    // Resources are held in the Mediator, outside the snapshot: hand back the old tree's places.
+    std::vector<TaskRef> oldTasks = allTasks(inst.root());
+    for (size_t i = 0; i < oldTasks.size(); ++i) inst.mediator->release(oldTasks[i].item);
+    trace.engine("ResourceCoordinator::release(every old task)", "Mediator", "the replaced tree gives its resources back");
 
     inst.retiredRoots.push_back(inst.workflow->getRoot());
+    inst.retiredMediators.push_back(std::move(inst.mediator));
     inst.workflow->restoreSnapshot(snap);
     trace.engine("WorkflowInstance::restoreSnapshot(snapshot)", "Memento (Originator)",
-                 "restores status '" + inst.workflow->getStatus() + "' and a fresh clone of the saved tree");
+                 "restores status '" + inst.workflow->getStatus() + "', the case data and a fresh clone of the saved tree");
+    inst.mediator.reset(new ResourceCoordinator());
     wire(inst, trace);
 
-    inst.data = inst.snapshotData.back();
-    for (Data::iterator it = inst.data.begin(); it != inst.data.end();) {
-        if (it->first.compare(0, 9, "resource.") != 0) { ++it; continue; }
-        std::string task = it->first.substr(9);
-        ParticipantEntry* who = ind.people->find(inst.data["resourceBy." + task]);
-        Resource* resource = who != nullptr ? ind.scenario->resourceFor(task, *who) : nullptr;
-        WorkItem* item = findTask(inst.root(), task);
-        bool granted = item != nullptr && resource != nullptr && ind.coordinator->requestResource(item, resource);
-        trace.engine("ResourceCoordinator::requestResource(" + task + ")", "Mediator",
-                     granted ? "re-obtained the slot held when the snapshot was taken" : "slot no longer available");
+    inst.data = inst.workflow->getData();
+    trace.engine("WorkflowInstance::getData()", "Memento (Originator)", "the case data as it was when the snapshot was taken");
+    std::vector<std::string> keys;
+    for (Data::const_iterator it = inst.data.begin(); it != inst.data.end(); ++it) {
+        if (it->first.compare(0, 11, "resourceId.") == 0) keys.push_back(it->first.substr(11));
+    }
+    for (size_t k = 0; k < keys.size(); ++k) {
+        const std::string& taskId = keys[k];
+        Resource* resource = scenario.resource(inst.data["resourceId." + taskId]);
+        TaskRef task = findTask(inst.root(), taskId);
+        bool granted = task.item != nullptr && resource != nullptr && inst.mediator->requestResource(task.item, resource);
+        trace.engine("ResourceCoordinator::requestResource(" + taskId + ")", "Mediator",
+                     granted ? "re-obtained the resource held when the snapshot was taken" : "that resource is no longer free");
         if (!granted) {
-            inst.data.erase("resourceBy." + task);
-            inst.data.erase(it++);
-        } else {
-            ++it;
+            inst.data.erase("resource." + taskId);
+            inst.data.erase("resourceId." + taskId);
+            inst.data.erase("resourceBy." + taskId);
         }
     }
 
-    inst.processor.reset(new CommandProcessor());
-    inst.commandDepth = 0;
-    inst.log.clearCommandStack();
-    trace.temporary("new CommandProcessor()", "Command",
-                    "undo history cleared: the old commands point at the tree that was just replaced");
+    inst.commands.reset(new CommandProcessor());
+    inst.commandLabels.clear();
+    trace.engine("new CommandProcessor()", "Command",
+                 "undo history cleared: the old commands point at the tree that was just replaced");
     inst.started = inst.workflow->getStatus() != "Created";
+    syncWorkload(inst, &trace);
     updateStatus(inst);
-
-    std::vector<Row> after = rows(inst.root());
-    json changes = json::array();
-    std::vector<std::string> changeText;
-    for (size_t i = 0; i < after.size() && i < before.size(); ++i) {
-        if (after[i].state != before[i].state) {
-            changes.push_back(json{{"task", after[i].id}, {"name", after[i].name},
-                                   {"from", before[i].state}, {"to", after[i].state}});
-            changeText.push_back(after[i].name + ": " + before[i].state + " -> " + after[i].state);
-        }
-    }
-    std::string message = "Restored " + inst.snapshotLabels.back() + ". Undo history cleared.";
-    HistoryEntry& entry = inst.log.add("restore", "", "", message, "info");
-    entry.changes = changeText;
-    return json{{"ok", true}, {"message", message}, {"trace", traceJson(trace.steps())},
-                {"console", console.lines()}, {"changes", changes}, {"instance", instanceView(inst)}};
+    inst.bus->publish(Event(EventType::EXTERNAL_EVENT, inst.id, "", "restored " + inst.snapshotLabels.back()));
+    trace.engine("WorkflowEventBus::publish(EXTERNAL_EVENT, restored)", "Observer (Subject)", "");
+    return respond(inst, true, "Restored " + inst.snapshotLabels.back() + ". Undo history cleared.", false, trace,
+                   before, console.lines());
 }
 
 // ===========================================================================
 // Views
 // ===========================================================================
 
-json EngineGateway::treeNode(Industry& ind, const Data& data, WorkComponent* node, const std::vector<int>& path) {
-    WorkItem* item = asWorkItem(node);
-    if (item == nullptr) {
+json EngineGateway::respond(Instance& inst, bool ok, const std::string& message, bool warning, Trace& trace,
+                            const std::vector<Row>& before, const json& console) {
+    std::vector<Row> after = rowsOf(inst.root());
+    json changes = json::array();
+    for (size_t i = 0; i < after.size() && i < before.size(); ++i) {
+        if (after[i].state != before[i].state || after[i].assignee != before[i].assignee) {
+            changes.push_back(json{{"task", after[i].id}, {"name", after[i].name},
+                                   {"from", before[i].state}, {"to", after[i].state}});
+        }
+    }
+    return json{{"ok", ok}, {"warning", warning}, {"message", message}, {"trace", traceJson(trace.steps())},
+                {"console", console}, {"changes", changes}, {"instance", instanceView(inst)}};
+}
+
+json EngineGateway::treeNode(ScenarioRuntime& scenario, const Data& data, WorkComponent* node, const std::vector<int>& path) {
+    if (node->getState() == nullptr) {
         json children = json::array();
         for (int i = 0; node->getChild(i) != nullptr; ++i) {
             std::vector<int> childPath = path;
             childPath.push_back(i);
-            children.push_back(treeNode(ind, data, node->getChild(i), childPath));
+            children.push_back(treeNode(scenario, data, node->getChild(i), childPath));
         }
-        return json{{"type", "stage"}, {"name", ind.builder->names().stageName(path)}, {"path", pathKey(path)},
+        return json{{"type", "stage"}, {"name", scenario.stageNames().nameAt(path)}, {"path", pathKey(path)},
                     {"children", children}};
     }
 
-    const std::string id = item->getId();
-    json task = {{"type", "task"}, {"id", id}, {"name", item->getName()}, {"kind", ind.kind(id)},
-                 {"state", stateOf(item)}, {"canExecute", item->getState()->canExecute()},
-                 {"path", pathKey(path)}};
-    const ParticipantEntry* who = ind.people->byPointer(item->getAssignee());
-    task["assignee"] = who ? json{{"id", who->id}, {"name", who->name}, {"role", who->role}} : json(nullptr);
-
-    const TaskInfo* info = ind.info(id);
-    if (info != nullptr) {
-        task["roleHint"] = info->roleHint;
-        task["connector"] = info->connector;
-        task["help"] = info->help;
-        task["outcomeQuestion"] = info->outcomeQuestion;
-        task["outcomes"] = info->outcomes;
+    TaskRef ref = refFor(node);
+    const std::string id = ref.item->getId();
+    const ScenarioSpec& spec = scenario.spec();
+    const TaskSpec* t = spec.task(id);
+    json task = {{"type", "task"}, {"id", id}, {"name", ref.item->getName()}, {"kind", kindOf(ref)},
+                 {"state", stateOf(node)}, {"canExecute", node->getState()->canExecute()},
+                 {"decorators", ref.decorators}, {"path", pathKey(path)}};
+    Participant* who = node->getAssignee();
+    task["assignee"] = who ? json{{"id", who->getID()}, {"name", who->getName()}, {"role", who->getRole()}} : json(nullptr);
+    if (t != nullptr) {
+        task["role"] = t->role;
+        task["help"] = t->help;
+        task["prerequisites"] = t->dependsOn;
+        task["strategy"] = scenario.strategyName(id);
+        task["resource"] = t->resource == "@assignee" ? std::string("the assignee's own resource")
+                                                      : (t->resource.empty() ? std::string()
+                                                                             : spec.resource(t->resource)->name);
     }
-    json prereq = json::array();
-    std::vector<std::string> deps = ind.prerequisites(id);
-    for (size_t i = 0; i < deps.size(); ++i) prereq.push_back(deps[i]);
-    task["prerequisites"] = prereq;
+    if (ApprovalTask* approval = asApprovalTask(ref)) {
+        task["requestValue"] = approval->getRequestValue();
+        json chain = json::array();
+        std::vector<ChainLevelInfo> levels = scenario.chainOf(id);
+        for (size_t i = 0; i < levels.size(); ++i) {
+            chain.push_back(json{{"label", levels[i].label}, {"role", levels[i].role}, {"limit", levels[i].limit},
+                                 {"final", levels[i].isFinal}});
+        }
+        task["chain"] = chain;
+        task["chainResult"] = json{{"ran", approval->hasChainResult()},
+                                   {"outcome", approval->getChainOutcome()},
+                                   {"decided", approval->wasChainDecided()},
+                                   {"approved", approval->wasChainApproved()},
+                                   {"path", approval->getChainPath()},
+                                   {"decidedBy", approval->getChainDecidedBy()}};
+    }
+    if (AutomatedTask* automated = asAutomatedTask(ref)) task["stepSucceeds"] = automated->getStepSucceeds();
 
-    ApprovalTask* approval = asApprovalTask(item);
-    if (approval != nullptr) task["requestValue"] = approval->getRequestValue();
+    if (const DecisionSpec* d = spec.decisionAfter(id)) {
+        json branches = json::array();
+        for (size_t b = 0; b < d->branches.size(); ++b) {
+            branches.push_back(json{{"id", d->branches[b].id}, {"label", d->branches[b].label}});
+        }
+        std::string reason;
+        std::string suggested = d->rules.empty() ? d->defaultBranch : branchByRules(*d, data, reason);
+        task["decision"] = json{{"id", d->id}, {"label", d->label}, {"mode", d->mode}, {"branches", branches},
+                                {"suggested", suggested}, {"reason", reason}};
+    }
+    for (size_t i = 0; i < spec.decisions.size(); ++i) {
+        for (size_t b = 0; b < spec.decisions[i].branches.size(); ++b) {
+            const std::vector<std::string>& ts = spec.decisions[i].branches[b].tasks;
+            if (std::find(ts.begin(), ts.end(), id) != ts.end()) {
+                task["branchOf"] = spec.decisions[i].label + ": " + spec.decisions[i].branches[b].label;
+            }
+        }
+    }
 
     Data::const_iterator held = data.find("resource." + id);
-    task["resourceHeldWith"] = held == data.end() ? json(nullptr) : json(held->second);
+    task["resourceHeld"] = held == data.end() ? json(nullptr) : json(held->second);
     Data::const_iterator refused = data.find("refused." + id);
-    task["resourceRefusedBy"] = refused == data.end() ? json(nullptr) : json(refused->second);
+    task["resourceRefused"] = refused == data.end() ? json(nullptr) : json(refused->second);
     return task;
 }
 
 json EngineGateway::instanceView(Instance& inst) {
-    Industry& ind = *inst.industry;
+    ScenarioRuntime& scenario = *inst.scenario;
     WorkComponent* root = inst.root();
 
+    // "Available work" comes from the real ReadyTaskIterator.
     json available = json::array();
-    std::vector<WorkItem*> tasks = allTasks(root);   // DepthFirstIterator
+    ReadyTaskIterator ready(root);
+    while (ready.hasNext()) {
+        TaskRef ref = refFor(ready.next());
+        if (ref.item != nullptr) available.push_back(ref.item->getId());
+    }
+
     std::map<std::string, int> counts;
-    for (size_t i = 0; i < tasks.size(); ++i) {
-        std::string s = stateOf(tasks[i]);
-        counts[s]++;
-        if (s == "Available") available.push_back(tasks[i]->getId());
-    }
-
-    json ready = json::array();
-    ReadyTaskIterator it(root);
-    it.reset();
-    while (it.hasNext()) {
-        WorkItem* item = asWorkItem(it.next());
-        if (item != nullptr) ready.push_back(item->getId());
-    }
-
-    json history = json::array();
-    const std::vector<HistoryEntry>& entries = inst.log.entries();
-    for (size_t i = 0; i < entries.size(); ++i) {
-        history.push_back(json{{"seq", entries[i].sequence}, {"time", entries[i].time}, {"action", entries[i].action},
-                               {"task", entries[i].taskId}, {"taskName", entries[i].taskName},
-                               {"detail", entries[i].detail}, {"result", entries[i].result},
-                               {"changes", entries[i].changes}, {"undoable", entries[i].onCommandStack}});
-    }
+    std::vector<TaskRef> tasks = allTasks(root);
+    for (size_t i = 0; i < tasks.size(); ++i) counts[stateOf(tasks[i].node)]++;
 
     json data = json::object();
     for (Data::const_iterator d = inst.data.begin(); d != inst.data.end(); ++d) data[d->first] = d->second;
+    json commandHistory = json::array();
+    for (size_t i = inst.commandLabels.size(); i > 0; --i) commandHistory.push_back(inst.commandLabels[i - 1]);
 
-    return json{{"id", inst.id}, {"industry", ind.scenario->key()}, {"industryTitle", ind.scenario->title()},
-                {"subject", json{{"id", inst.subjectId}, {"name", inst.subjectName}, {"summary", inst.summary},
-                                 {"noun", ind.scenario->subjectNoun()}}},
-                {"status", inst.workflow->getStatus()}, {"started", inst.started},
+    return json{{"id", inst.id}, {"scenario", scenario.key()}, {"scenarioName", scenario.spec().name},
+                {"label", inst.label}, {"status", inst.workflow->getStatus()}, {"started", inst.started},
                 {"outcome", data.value("outcome", "")}, {"data", data},
-                {"tree", treeNode(ind, inst.data, root, std::vector<int>())},
-                {"available", available}, {"readyIterator", ready}, {"counts", counts},
-                {"history", history}, {"snapshots", inst.snapshotLabels}, {"canUndo", inst.commandDepth > 0},
-                {"commandDepth", inst.commandDepth}};
+                {"tree", treeNode(scenario, inst.data, root, std::vector<int>())},
+                {"available", available}, {"counts", counts},
+                {"audit", inst.audit->getLog()}, {"notifications", inst.notifier->getSent()},
+                {"eventsTotal", inst.monitor->totalEvents()},
+                {"commandHistory", commandHistory},
+                {"commandDepth", static_cast<int>(inst.commands->getHistory().size())},
+                {"canUndo", !inst.commands->getHistory().empty()},
+                {"snapshots", inst.snapshotLabels}};
+}
+
+json EngineGateway::scenarioView(ScenarioRuntime& scenario) {
+    const ScenarioSpec& spec = scenario.spec();
+    json people = json::array();
+    for (size_t i = 0; i < scenario.participants().size(); ++i) {
+        Participant* p = scenario.participants()[i].get();
+        people.push_back(json{{"id", p->getID()}, {"name", p->getName()}, {"role", p->getRole()},
+                              {"workload", p->workload()}});
+    }
+    json resourceList = json::array();
+    for (size_t i = 0; i < spec.resources.size(); ++i) {
+        Resource* r = scenario.resource(spec.resources[i].id);
+        const ParticipantSpec* owner = spec.participant(spec.resources[i].owner);
+        resourceList.push_back(json{{"id", spec.resources[i].id}, {"name", r->getName()}, {"capacity", r->getCapacity()},
+                                    {"available", r->getAvailable()}, {"owner", owner ? owner->name : std::string()}});
+    }
+    json inputs = json::array();
+    for (size_t i = 0; i < spec.inputs.size(); ++i) {
+        inputs.push_back(json{{"key", spec.inputs[i].key}, {"label", spec.inputs[i].label},
+                              {"type", spec.inputs[i].type}, {"options", spec.inputs[i].options}});
+    }
+    json seeds = json::array();
+    for (size_t i = 0; i < spec.seeds.size(); ++i) {
+        json data = json::object();
+        for (CaseData::const_iterator it = spec.seeds[i].data.begin(); it != spec.seeds[i].data.end(); ++it) data[it->first] = it->second;
+        seeds.push_back(json{{"label", spec.seeds[i].label}, {"summary", spec.seeds[i].summary}, {"data", data}});
+    }
+    json chains = json::array();
+    std::vector<const TaskSpec*> tasks = spec.allTasks();
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        std::vector<ChainLevelInfo> levels = scenario.chainOf(tasks[i]->id);
+        if (levels.empty()) continue;
+        json lv = json::array();
+        for (size_t k = 0; k < levels.size(); ++k) {
+            lv.push_back(json{{"label", levels[k].label}, {"role", levels[k].role}, {"limit", levels[k].limit},
+                              {"final", levels[k].isFinal}});
+        }
+        chains.push_back(json{{"task", tasks[i]->id}, {"taskName", tasks[i]->name}, {"levels", lv}});
+    }
+    json decisions = json::array();
+    for (size_t i = 0; i < spec.decisions.size(); ++i) {
+        const DecisionSpec& d = spec.decisions[i];
+        json branches = json::array();
+        for (size_t b = 0; b < d.branches.size(); ++b) branches.push_back(json{{"id", d.branches[b].id}, {"label", d.branches[b].label}});
+        json rules = json::array();
+        for (size_t r = 0; r < d.rules.size(); ++r) rules.push_back(describeRule(d.rules[r]) + " -> " + d.rules[r].branch);
+        const TaskSpec* after = spec.task(d.after);
+        decisions.push_back(json{{"id", d.id}, {"label", d.label}, {"after", after ? after->name : d.after},
+                                 {"mode", d.mode}, {"branches", branches}, {"rules", rules}});
+    }
+    return json{{"key", scenario.key()}, {"name", spec.name}, {"industry", spec.industry},
+                {"description", spec.description}, {"idPrefix", spec.idPrefix}, {"subjectField", spec.subjectField},
+                {"template", templateFlags[scenario.key()]}, {"templateFile", templateFiles[scenario.key()]},
+                {"inputs", inputs}, {"participants", people}, {"resources", resourceList}, {"seeds", seeds},
+                {"chains", chains}, {"decisions", decisions},
+                {"definition", treeNode(scenario, Data(), scenario.definition()->getRoot().get(), std::vector<int>())},
+                {"spec", spec.source}};
 }
 
 json EngineGateway::summary(Instance& inst) {
     std::map<std::string, int> counts;
-    std::vector<WorkItem*> tasks = allTasks(inst.root());
-    for (size_t i = 0; i < tasks.size(); ++i) counts[stateOf(tasks[i])]++;
-    return json{{"id", inst.id}, {"industry", inst.industry->scenario->key()}, {"subject", inst.subjectName},
+    std::vector<TaskRef> tasks = allTasks(inst.root());
+    for (size_t i = 0; i < tasks.size(); ++i) counts[stateOf(tasks[i].node)]++;
+    return json{{"id", inst.id}, {"scenario", inst.scenario->key()}, {"label", inst.label},
                 {"status", inst.workflow->getStatus()}, {"outcome", inst.data.count("outcome") ? inst.data["outcome"] : ""},
                 {"counts", counts}, {"tasks", tasks.size()}};
 }
@@ -1032,69 +1313,29 @@ json EngineGateway::listInstances() {
     return list;
 }
 
-json EngineGateway::resources(const std::string& industryKey) {
+json EngineGateway::resources(const std::string& scenarioKey) {
     std::lock_guard<std::mutex> lock(mutex);
     ConsoleCapture console;
-    Industry& ind = industryOrThrow(industryKey);
+    ScenarioRuntime& scenario = scenarioOrThrow(scenarioKey);
+    const ScenarioSpec& spec = scenario.spec();
     json out = json::array();
-    const std::vector<std::unique_ptr<ParticipantEntry> >& people = ind.people->all();
-    for (size_t i = 0; i < people.size(); ++i) {
-        if (!people[i]->slots) continue;
-        json grants = json::array();
+    for (size_t i = 0; i < spec.resources.size(); ++i) {
+        Resource* r = scenario.resource(spec.resources[i].id);
+        json holders = json::array();
         for (size_t k = 0; k < instanceOrder.size(); ++k) {
             Instance& inst = *instances[instanceOrder[k]];
-            if (inst.industry != &ind) continue;
+            if (inst.scenario != &scenario) continue;
             for (Data::const_iterator d = inst.data.begin(); d != inst.data.end(); ++d) {
-                if (d->first.compare(0, 11, "resourceBy.") == 0 && d->second == people[i]->id) {
-                    grants.push_back(json{{"instance", inst.id}, {"subject", inst.subjectName},
-                                          {"task", d->first.substr(11)}});
+                if (d->first.compare(0, 11, "resourceId.") == 0 && d->second == spec.resources[i].id) {
+                    holders.push_back(json{{"instance", inst.id}, {"label", inst.label}, {"task", d->first.substr(11)}});
                 }
             }
         }
-        out.push_back(json{{"id", people[i]->id}, {"name", people[i]->name}, {"role", people[i]->role},
-                           {"capacity", people[i]->slotCapacity}, {"isFree", people[i]->slots->isFree()},
-                           {"grantedTo", grants}});
+        const ParticipantSpec* owner = spec.participant(spec.resources[i].owner);
+        out.push_back(json{{"id", spec.resources[i].id}, {"name", r->getName()}, {"capacity", r->getCapacity()},
+                           {"available", r->getAvailable()}, {"isFree", r->isFree()},
+                           {"owner", owner ? owner->name : std::string()}, {"heldBy", holders}});
     }
     return out;
 }
 
-json EngineGateway::meta() {
-    std::lock_guard<std::mutex> lock(mutex);
-    ConsoleCapture console;
-    json list = json::array();
-    for (size_t i = 0; i < industryOrder.size(); ++i) {
-        Industry& ind = *industries[industryOrder[i]];
-        json subjects = json::array();
-        std::vector<SubjectSeed> seeds = ind.scenario->subjects();
-        for (size_t k = 0; k < seeds.size(); ++k) {
-            subjects.push_back(json{{"id", seeds[k].id}, {"name", seeds[k].name}, {"summary", seeds[k].summary}});
-        }
-        json people = json::array();
-        const std::vector<std::unique_ptr<ParticipantEntry> >& entries = ind.people->all();
-        for (size_t k = 0; k < entries.size(); ++k) {
-            people.push_back(json{{"id", entries[k]->id}, {"name", entries[k]->name}, {"role", entries[k]->role},
-                                  {"slots", entries[k]->slotCapacity}});
-        }
-        json chain = json::array();
-        std::vector<ChainLink> links = ind.scenario->chain();
-        for (size_t k = 0; k < links.size(); ++k) {
-            chain.push_back(json{{"role", links[k].role}, {"limit", links[k].limit}, {"final", links[k].isFinal}});
-        }
-        json pending = json::array();
-        const std::vector<RecordingDefinitionBuilder::PendingStep>& steps = ind.builder->pendingSteps();
-        for (size_t k = 0; k < steps.size(); ++k) {
-            pending.push_back(json{{"step", steps[k].step}, {"task", steps[k].task}, {"detail", steps[k].detail}});
-        }
-        list.push_back(json{{"key", ind.scenario->key()}, {"title", ind.scenario->title()},
-                            {"description", ind.scenario->description()}, {"noun", ind.scenario->subjectNoun()},
-                            {"director", ind.scenario->directorName()},
-                            {"definitionName", ind.definition->getName()},
-                            {"subjects", subjects}, {"participants", people}, {"chain", chain},
-                            {"chainTask", ind.scenario->chainTaskId()},
-                            {"definition", treeNode(ind, Data(), ind.definition->getRoot().get(), std::vector<int>())},
-                            {"buildTrace", traceJson(ind.buildTrace)}, {"pendingBuilderSteps", pending}});
-    }
-    return json{{"industries", list}, {"resetCount", resetCount},
-                {"observer", PendingIntegration::observerStatus()},
-                {"strategy", PendingIntegration::strategyStatus()}};
-}

@@ -8,7 +8,7 @@ class WorkloadAssignment : public AssignmentStrategy {
 public:
     explicit WorkloadAssignment(const std::vector<Participant*>& candidates);
 
-    void route(WorkItem* item) override;
+    bool route(WorkItem* item) override;
 };
 
 #endif

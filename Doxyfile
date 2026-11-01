@@ -1,0 +1,29 @@
+# Doxyfile for TIVIDY. Run "doxygen Doxyfile" from the repository root.
+# Open docs/api/html/index.html in a browser afterwards.
+
+PROJECT_NAME           = "TIVIDY"
+PROJECT_BRIEF          = "Generic workflow management system (COS 214)"
+OUTPUT_DIRECTORY       = docs/api
+
+# What to document: every header and source file under src/.
+INPUT                  = include
+FILE_PATTERNS          = *.h *.cpp
+RECURSIVE              = YES
+
+# YES lists every class, even undocumented ones, so the site looks complete.
+# Set to NO to turn undocumented members into warnings (a quick gap check).
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+
+SOURCE_BROWSER         = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+# Inheritance and collaboration graphs need Graphviz ("dot").
+# Install it, then set HAVE_DOT = YES for class diagrams in the docs.
+HAVE_DOT               = NO
+
+QUIET                  = YES
+

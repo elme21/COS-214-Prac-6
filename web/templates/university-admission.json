@@ -1,0 +1,106 @@
+{
+  "name": "University admission",
+  "industry": "Education",
+  "description": "Applicants submit documents; admissions checks them (looping back while documents are missing); identity and results are verified in parallel; the faculty checks programme requirements; an approval chain admits or rejects; the applicant is notified.",
+  "idPrefix": "EDU",
+  "subjectField": "name",
+  "inputs": [
+    { "key": "name", "label": "Applicant name", "type": "text" },
+    { "key": "programme", "label": "Programme", "type": "text" },
+    { "key": "curriculum", "label": "School curriculum", "type": "choice", "options": ["NSC", "IEB", "Cambridge International"] },
+    { "key": "aps", "label": "APS score", "type": "number" },
+    { "key": "riskScore", "label": "Admission risk score (0-100)", "type": "number" },
+    { "key": "idNumber", "label": "ID number", "type": "text" },
+    { "key": "cellphone", "label": "Cellphone", "type": "text" },
+    { "key": "documents", "label": "Documents", "type": "choice", "options": ["complete", "certified ID copy missing"] }
+  ],
+  "participants": [
+    { "id": "applicant", "name": "Applicant (self-service portal)", "role": "Applicant" },
+    { "id": "khumalo", "name": "Ms Lindiwe Khumalo", "role": "Admissions officer" },
+    { "id": "steyn", "name": "Mr Pieter Steyn", "role": "Admissions officer" },
+    { "id": "botha", "name": "Dr Johan Botha", "role": "Faculty reviewer" },
+    { "id": "zulu", "name": "Prof Nomsa Zulu", "role": "Head of Department" },
+    { "id": "govender", "name": "Mr Ravi Govender", "role": "Registrar" },
+    { "id": "system", "name": "TIVIDY automation", "role": "System" }
+  ],
+  "resources": [],
+  "stages": [
+    {
+      "id": "Application", "name": "Application",
+      "tasks": [
+        { "id": "SubmitApplication", "name": "Submit Application", "type": "manual", "role": "Applicant",
+          "strategy": "role", "help": "Applicant uploads documents and personal details." },
+        { "id": "CheckDocuments", "name": "Check Documents", "type": "manual", "role": "Admissions officer",
+          "dependsOn": ["SubmitApplication"], "strategy": "workload",
+          "help": "Documents missing? reject() it (loop back), then reassign once they arrive.",
+          "onReject": { "set": { "documents": "missing - waiting for availability" } },
+          "onComplete": { "set": { "documents": "complete" } } }
+      ]
+    },
+    {
+      "id": "Verification", "name": "Verification",
+      "tasks": [
+        { "id": "VerifyPersonalDetails", "name": "Verify Personal Details", "type": "automated", "role": "System",
+          "dependsOn": ["CheckDocuments"], "strategy": "role",
+          "help": "Fork: automated identity check, in parallel with Verify Results." },
+        { "id": "VerifyResults", "name": "Verify Results", "type": "automated", "role": "System",
+          "dependsOn": ["CheckDocuments"], "strategy": "role",
+          "successRule": { "field": "curriculum", "op": "==", "value": "NSC" },
+          "help": "Fork: automated results check. Only NSC results are in the database, so other curricula fail: escalate, then an admissions officer finishes it by hand." }
+      ]
+    },
+    {
+      "id": "Assessment", "name": "Assessment",
+      "tasks": [
+        { "id": "FacultyChecksRequirements", "name": "Faculty Checks Requirements", "type": "manual", "role": "Faculty reviewer",
+          "dependsOn": ["VerifyPersonalDetails", "VerifyResults"], "strategy": "role",
+          "help": "Join: available only when BOTH verifications are complete." }
+      ],
+      "stages": [
+        {
+          "id": "Decision", "name": "Admission decision",
+          "tasks": [
+            { "id": "ApplicationDecision", "name": "Approve or Reject Application", "type": "approval", "role": "Faculty reviewer",
+              "dependsOn": ["FacultyChecksRequirements"], "decorators": ["audit"],
+              "requestValue": { "field": "riskScore" },
+              "chain": [
+                { "label": "Approver level 1", "role": "Faculty reviewer", "limit": 30 },
+                { "label": "Approver level 2", "role": "Head of Department", "limit": 60 },
+                { "label": "Final approver", "role": "Registrar", "limit": 85 }
+              ],
+              "help": "Wrapped in an AuditDecorator. execute() sends the risk score down the chain.",
+              "onComplete": { "set": { "decision": "Admitted" }, "outcome": "Admitted to {programme}" },
+              "onReject": { "set": { "decision": "Not admitted" }, "outcome": "Application rejected", "unlock": ["NotifyApplicant"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Notification", "name": "Notification",
+      "tasks": [
+        { "id": "NotifyApplicant", "name": "Notify Applicant", "type": "automated", "role": "System",
+          "dependsOn": ["ApplicationDecision"], "strategy": "role",
+          "help": "Automated notification, for either decision (a rejection unlocks it too).",
+          "onComplete": { "set": { "notified": "yes" } } }
+      ]
+    }
+  ],
+  "decisions": [],
+  "seeds": [
+    { "label": "Thandiwe Mokoena", "summary": "BSc Computer Science, NSC, APS 42 - strong applicant (risk 15)",
+      "data": { "name": "Thandiwe Mokoena", "programme": "BSc Computer Science", "curriculum": "NSC", "aps": 42, "riskScore": 15,
+                "idNumber": "0703140801084", "cellphone": "0821234567", "documents": "complete" } },
+    { "label": "Pieter van Wyk", "summary": "BCom Accounting, NSC, APS 33 - borderline, needs approver level 2 (risk 48)",
+      "data": { "name": "Pieter van Wyk", "programme": "BCom Accounting", "curriculum": "NSC", "aps": 33, "riskScore": 48,
+                "idNumber": "0609225115086", "cellphone": "0739876543", "documents": "complete" } },
+    { "label": "Aisha Patel", "summary": "BEng Mechanical, Cambridge A-levels - automated results check fails; final approver decides (risk 72)",
+      "data": { "name": "Aisha Patel", "programme": "BEng Mechanical Engineering", "curriculum": "Cambridge International", "aps": 40,
+                "riskScore": 72, "idNumber": "0705070140185", "cellphone": "0605551234", "documents": "complete" } },
+    { "label": "Sipho Dlamini", "summary": "BSc Actuarial Science, NSC, APS 26 (minimum 40) - the chain rejects (risk 91)",
+      "data": { "name": "Sipho Dlamini", "programme": "BSc Actuarial Science", "curriculum": "NSC", "aps": 26, "riskScore": 91,
+                "idNumber": "0611305788089", "cellphone": "0817654321", "documents": "complete" } },
+    { "label": "Kagiso Sithole", "summary": "LLB, NSC, APS 38 - certified ID copy missing, so Check Documents loops (risk 22)",
+      "data": { "name": "Kagiso Sithole", "programme": "LLB", "curriculum": "NSC", "aps": 38, "riskScore": 22,
+                "idNumber": "0708190307080", "cellphone": "0724567890", "documents": "certified ID copy missing" } }
+  ]
+}

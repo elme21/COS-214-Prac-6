@@ -1,20 +1,15 @@
 #include "RoleApproverHandler.h"
 #include "ApprovalRequest.h"
-#include "WorkItem.h"
+#include "WorkComponent.h"
+#include <string>
 
-void RoleApproverHandler::handleRequest(ApprovalRequest& request)
+bool RoleApproverHandler::tryDecide(ApprovalRequest& request)
 {
-    if (isAuthorized(request))
+    if (request.getValue() > limit)
     {
-        request.getItem()->approve();
+        return false;
     }
-    else
-    {
-        ApprovalHandler::handleRequest(request);   // escalate
-    }
-}
-
-bool RoleApproverHandler::isAuthorized(const ApprovalRequest& request) const
-{
-    return request.getValue() <= limit;
+    request.setDecision(ApprovalRequest::Approved, getName());
+    request.getTarget()->approve();
+    return true;
 }

@@ -7,10 +7,8 @@
  */
 
 #include "WorkflowCommand.h"
-
-class WorkComponent;
-class WorkItemState;
-class Participant;
+#include "WorkComponent.h" 
+#include "Participant.h"
 
 /**
  * @class MakeAvailableCommand

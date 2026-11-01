@@ -235,8 +235,6 @@ details > summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }
 .history { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .history th, .history td { text-align: left; padding: .3rem .35rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .history th { color: var(--muted); font-weight: 600; }
-.res { font-weight: 700; font-size: .75rem; }
-.res-done { color: var(--ok); } .res-refused { color: var(--bad); } .res-undone { color: var(--muted); text-decoration: line-through; } .res-info { color: var(--accent); }
 .table-wrap { overflow-x: auto; }
 
 /* ---------- patterns panel ---------- */
@@ -281,3 +279,100 @@ details > summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }
 .mini-tree { font-size: .85rem; }
 .mini-tree ul { margin: .2rem 0; padding-left: 1.1rem; }
 .empty { color: var(--muted); font-style: italic; }
+
+/* ---------- engine audit / command / notification lists ---------- */
+.audit { margin: .3rem 0 .6rem; padding-left: 1.4rem; max-height: 16rem; overflow: auto; }
+.audit li { padding: .12rem 0; border-bottom: 1px solid var(--border); word-break: break-word; }
+h4.small { margin: .6rem 0 .2rem; }
+
+/* ---------- start-instance form ---------- */
+.form-grid { display: grid; gap: .35rem .5rem; grid-template-columns: minmax(0, 1fr); }
+.form-grid label { font-size: .8rem; color: var(--muted); font-weight: 600; }
+input[type="text"], input[type="number"], textarea {
+  font: inherit; font-size: .9rem; padding: .35rem .5rem; border-radius: 8px; width: 100%;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+textarea { min-height: 3.5rem; resize: vertical; }
+input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+input[type="checkbox"] { accent-color: var(--accent); }
+.tab .ind { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .75; margin-right: .3rem; }
+.tab.custom { font-style: italic; }
+
+/* ---------- scenario editor ---------- */
+.editor { max-width: 1200px; margin: 0 auto; }
+.ed-section { margin-bottom: 1rem; }
+.ed-section > h2 { margin-bottom: .2rem; }
+.ed-section > .note { margin-bottom: .6rem; }
+.icon-btn { font: inherit; font-size: .8rem; line-height: 1; padding: .3rem .45rem; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.icon-btn:hover { border-color: var(--accent); }
+.icon-btn.del { color: var(--bad); }
+.ed-stage { border: 1px dashed var(--border); border-radius: var(--radius); padding: .6rem .7rem; margin-top: .6rem; background: var(--surface-2); }
+.ed-stage .ed-stage { background: var(--surface); }
+.ed-task { border: 1px solid var(--border); border-radius: 8px; padding: .55rem .6rem; margin-top: .5rem; background: var(--surface); }
+.ed-fields { display: grid; gap: .4rem .6rem; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end; }
+.ed-field { display: block; }
+.ed-field > span { display: block; font-size: .75rem; color: var(--muted); font-weight: 600; margin-bottom: .1rem; }
+.ed-checks { display: flex; flex-wrap: wrap; gap: .2rem .9rem; font-size: .84rem; padding: .3rem 0; }
+.ed-checks label { display: inline-flex; gap: .3rem; align-items: center; font-weight: 400; color: var(--text); }
+.ed-sub { margin-top: .5rem; padding-top: .45rem; border-top: 1px solid var(--border); }
+.ed-sub > b { font-size: .8rem; }
+.errors { margin: .4rem 0 0; padding-left: 1.2rem; color: var(--bad); font-size: .88rem; }
+.sticky-bar { position: sticky; top: 4.2rem; z-index: 5; }
+pre.json { font-family: var(--mono); font-size: .76rem; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: .6rem; max-height: 28rem; overflow: auto; margin: .4rem 0 0; }
+
+/* ---------- workflow wizard ---------- */
+.tech { font-family: var(--mono); font-size: .7rem; font-weight: 400; color: var(--muted); margin-left: .3rem;
+  text-transform: none; letter-spacing: 0; }
+.problems .tech, .ed-adv-body > .tech { display: block; margin: .15rem 0 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+input[type="radio"] { accent-color: var(--accent); }
+.ed-h { margin: 1rem 0 .2rem; }
+.ed-label { display: block; font-size: .75rem; color: var(--muted); font-weight: 600; margin-bottom: .1rem; }
+.wiz-progress ol { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem; padding: 0; margin: .6rem 0 0; }
+.wiz-step {
+  font: inherit; font-size: .88rem; font-weight: 600; display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
+  padding: .25rem .7rem .25rem .25rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+}
+.wiz-step:hover { border-color: var(--accent); color: var(--text); }
+.wiz-step:focus-visible, summary:focus-visible, #wiz-heading:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.wiz-step .num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; font-size: .8rem;
+  background: var(--surface-2); border: 1px solid var(--border); }
+.wiz-progress li.done .num { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+.wiz-progress li.current .wiz-step { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.wiz-progress li.current .num { background: var(--accent); color: #fff; border-color: var(--accent); }
+.wiz-step .count { font-size: .72rem; color: var(--bad); background: var(--bad-soft); border-radius: 999px; padding: 0 .45rem; }
+.wiz-bar { height: 4px; border-radius: 2px; background: var(--surface-2); margin-top: .55rem; overflow: hidden; }
+.wiz-bar span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+#wiz-heading { margin-bottom: .2rem; }
+.wiz-nav { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.ed-radios { border: 0; padding: 0; margin: .5rem 0 0; display: flex; flex-wrap: wrap; gap: .25rem 1.1rem; }
+.ed-radios > legend { font-size: .75rem; color: var(--muted); font-weight: 600; padding: 0; margin-bottom: .15rem; }
+.ed-radios label { display: inline-flex; gap: .3rem; align-items: center; font-size: .86rem; }
+.ed-start { gap: .4rem; }
+.btn.choice[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.ed-adv { margin-top: .5rem; border-top: 1px solid var(--border); padding-top: .25rem; }
+.ed-adv > summary { font-size: .86rem; }
+.ed-adv-body { padding: .1rem 0 .3rem; }
+.in-use { font-size: .75rem; font-weight: 600; color: var(--accent); }
+.ed-level { border: 1px solid var(--border); border-radius: 8px; padding: .45rem .55rem; margin-top: .4rem; background: var(--surface-2); }
+.ed-trio { display: grid; gap: .2rem .8rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: .3rem; }
+.rule-row { align-items: center; margin-top: .3rem; flex-wrap: nowrap; }
+.rule-line { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-size: .88rem; margin-top: .3rem; }
+.rule-line label { display: inline-flex; gap: .35rem; align-items: center; }
+.rule-line input[type="text"] { width: 8rem; }
+.problems { list-style: none; padding: 0; margin: .3rem 0 .6rem; }
+.problems li { border-left: 3px solid var(--bad); background: var(--bad-soft); color: var(--text); border-radius: 6px;
+  padding: .4rem .6rem; margin-top: .3rem; font-size: .88rem; }
+.problems .btn { margin-left: .3rem; }
+.ok-note { color: var(--ok); }
+.review-summary { background: var(--surface-2); box-shadow: none; }
+.summary-list { margin: .1rem 0 .5rem; padding-left: 1.2rem; font-size: .86rem; }
+.summary-list ul { padding-left: 1.1rem; }
+@media (max-width: 760px) {
+  .sticky-bar { position: static; }
+  .wiz-progress li:not(.current) .wiz-step .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .rule-row { flex-wrap: wrap; }
+  .rule-line input[type="text"] { width: 100%; }
+}

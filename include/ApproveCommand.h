@@ -7,7 +7,8 @@
  */
 
 #include "WorkflowCommand.h"
-
+#include "WorkComponent.h" 
+#include "Participant.h"
 /**
  * @class ApproveCommand
  * @brief Encapsulates approve operations on a WorkComponent.

@@ -14,12 +14,13 @@ shared_ptr<InstanceSnapshot> WorkflowInstance::createSnapshot() {
     if (root) {
         clonedRoot = shared_ptr<WorkComponent>(root->clone());
     }
-    return make_shared<InstanceSnapshot>(status, clonedRoot);
+    return make_shared<InstanceSnapshot>(status, clonedRoot, data);
 }
 
 void WorkflowInstance::restoreSnapshot(shared_ptr<InstanceSnapshot> snapshot) {
     if (snapshot) {
         status = snapshot->savedStatus; // Accessible via friend class
+        data = snapshot->savedData;
         if (snapshot->savedRoot) {
             root = shared_ptr<WorkComponent>(snapshot->savedRoot->clone());
         }

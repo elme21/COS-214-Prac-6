@@ -1,0 +1,27 @@
+var searchData=
+[
+  ['save_0',['save',['../class_snapshot_history.html#ada019ddb1db25da5e58e38d2a98e2976',1,'SnapshotHistory']]],
+  ['securedecorator_1',['SecureDecorator',['../class_secure_decorator.html#a4d3fe4bbf28fd8814197b485fb70d951',1,'SecureDecorator']]],
+  ['setapprovalchain_2',['setApprovalChain',['../class_code_definition_builder.html#a83f3118df483d4220e039d6e7b1fb883',1,'CodeDefinitionBuilder::setApprovalChain()'],['../class_definition_builder.html#a8b367abd826343f532728e3cd8817544',1,'DefinitionBuilder::setApprovalChain()']]],
+  ['setassignee_3',['setAssignee',['../class_work_item_state.html#a7af51c3437ad0d5ac948a8425de42c96',1,'WorkItemState']]],
+  ['setassignmentstrategy_4',['setAssignmentStrategy',['../class_code_definition_builder.html#aacf25e8f886558762cfc9782e033fadd',1,'CodeDefinitionBuilder::setAssignmentStrategy()'],['../class_definition_builder.html#a5bc16433eb1c9408fcf0c164851426a8',1,'DefinitionBuilder::setAssignmentStrategy()']]],
+  ['setcandidates_5',['setCandidates',['../class_assignment_strategy.html#a9c1fa82d7c4e46c28f8160addea060a4',1,'AssignmentStrategy']]],
+  ['setcoordinator_6',['setCoordinator',['../class_colleague.html#a8f38bcd09b75aa01f774b3595a439f64',1,'Colleague']]],
+  ['setdata_7',['setData',['../class_workflow_instance.html#aa73e913e19f2d2c8ed65022ba4b5ecb1',1,'WorkflowInstance']]],
+  ['setdecision_8',['setDecision',['../class_approval_request.html#a4997023c92d2c05bfead3f736e3f1c8f',1,'ApprovalRequest']]],
+  ['setdefaulttimeout_9',['setDefaultTimeout',['../class_deadline_escalator.html#aead7afcd2ac3f327daa234ae541af3d4',1,'DeadlineEscalator']]],
+  ['setescalationaction_10',['setEscalationAction',['../class_deadline_escalator.html#ae4aaf7b87095b1645585a94b636afa75',1,'DeadlineEscalator']]],
+  ['setfirsthandler_11',['setFirstHandler',['../class_approval_task.html#acafb1ea9fd903742e41326f125944d87',1,'ApprovalTask']]],
+  ['setid_12',['setId',['../class_work_item.html#ad38490d08f9b0b4cd9dbb54de6925610',1,'WorkItem']]],
+  ['setname_13',['setName',['../class_work_item.html#ab4969e14502fb7a7f21c6f8529b083a0',1,'WorkItem']]],
+  ['setrequestvalue_14',['setRequestValue',['../class_approval_task.html#ac2d9205e6503bed71a3f8365624a2661',1,'ApprovalTask']]],
+  ['setroot_15',['setRoot',['../class_workflow_instance.html#afb799bf1a7d2ca54a0122cc70fd22209',1,'WorkflowInstance']]],
+  ['setstate_16',['setState',['../class_workflow_event_bus.html#a1d76df846b8329d1a77acb83a1d954c2',1,'WorkflowEventBus']]],
+  ['setstatus_17',['setStatus',['../class_workflow_instance.html#a8637bf15fa11e0a837c5f629affcc6f6',1,'WorkflowInstance']]],
+  ['setstepsucceeds_18',['setStepSucceeds',['../class_automated_task.html#a17feb8ed1ff59945bd72573d611c3e9e',1,'AutomatedTask']]],
+  ['setstrategy_19',['setStrategy',['../class_task_router.html#a35b46f45b12dcf6a12438d66055a9f78',1,'TaskRouter::setStrategy()'],['../class_workflow_definition.html#a8253b7957375bcefc15631ab0832d049',1,'WorkflowDefinition::setStrategy()']]],
+  ['setsuccessor_20',['setSuccessor',['../class_approval_handler.html#a27967bee3a68a1915a885a4869c1288c',1,'ApprovalHandler']]],
+  ['start_21',['start',['../class_assigned_state.html#a2c01f2b6fe11089f5f141d1b68396d57',1,'AssignedState::start()'],['../class_audit_decorator.html#a06e987a68cc84fec1cb96a15f8fe7de2',1,'AuditDecorator::start()'],['../class_work_component.html#ab3fda63fe9ec7070dc9d0914989c8976',1,'WorkComponent::start()'],['../class_work_component_decorator.html#ad20c052d4f8e33acd16e86b16ebba691',1,'WorkComponentDecorator::start()'],['../class_workflow_manager.html#a296c44b949d5422634b0a1dea53c2cfa',1,'WorkflowManager::start()'],['../class_work_item.html#a1c7a432b33194e3adddc23d75c0be751',1,'WorkItem::start()'],['../class_work_item_state.html#a1e4b9bdb31abaf21c7dd1c46faadfa07',1,'WorkItemState::start()'],['../class_work_stage.html#acce2aad658720167245af66ae6ac5964',1,'WorkStage::start()']]],
+  ['startcommand_22',['StartCommand',['../class_start_command.html#aee6fc6ab8dd3e6ef177a932ace530194',1,'StartCommand']]],
+  ['subscribe_23',['subscribe',['../class_event_publisher.html#ab8ba7a0a164b51ce5df815587a593c78',1,'EventPublisher']]]
+];

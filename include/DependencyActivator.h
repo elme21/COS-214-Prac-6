@@ -14,7 +14,7 @@ class WorkflowEventBus;
  *
  * @author Logan (Observer and Strategy)
  * @date 2026-10-28
- * @ingroup ObserverPattern
+ * 
  */
 
 /**
@@ -32,7 +32,7 @@ class WorkflowEventBus;
  * @pre The published event carries the completed item (Event::item) and the items are registered with the coordinator.
  * @note Events without an item are ignored.
  *
- * @ingroup ObserverPattern
+ * 
  * @see WorkCoordinator, WorkItem::receive()
  */
 class DependencyActivator : public EventListener {

@@ -14,7 +14,7 @@ class WorkItem;
  *
  * @author Logan (Observer and Strategy)
  * @date 2026-10-28
- * @ingroup StrategyPattern
+ * 
  */
 
 class TaskRouter {
@@ -31,7 +31,7 @@ public:
     /// @throws std::invalid_argument if item is null
     /// @throws std::logic_error if no strategy has been set
     /// @see AssignmentStrategy::route()
-    void route(WorkItem* item);
+    bool route(WorkItem* item);
 
 private:
     AssignmentStrategy* strategy;

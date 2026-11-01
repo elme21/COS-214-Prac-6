@@ -1,223 +1,117 @@
-# Temporary web stand-ins and how to remove them
+# Integration status: what runs on the real engine
 
-The web demo must call the real C++ engine, never a hard-coded copy of it. Where a teammate's class
-is missing, broken, or lacks an interface, a **temporary stand-in** in `web/` does the smallest
-possible job, **using only real engine methods**. No stand-in reimplements state transitions,
-cloning, dependency checks or approval-chain decisions.
+The web demo drives the team's real C++11 engine (`include/`, `src/`); it never contains a copy of it.
+The engine is final. All 57 engine source files compile and link with `-std=c++11 -Wall -Wextra` and
+**zero warnings**; `build.ps1` skips no file and needs no special flags.
 
-Every stand-in file starts with:
+The GUI is **fully generic**:
+- Every scenario is a JSON **spec**: a file in `web/templates/`, or one made in the *+ New workflow* wizard.
+- One `GenericDirector` turns any spec into a definition with the real `CodeDefinitionBuilder` and
+  registers it in the real `DefinitionRegistry`.
+- Nothing in `web/server`, `web/scenarios` or `web/public` mentions an industry.
 
-```
-// TEMPORARY - stands in for <class> (Member N) until <specific fix>. Delete when that lands.
-```
+What the GUI cannot do through the engine is done by a few small **workarounds**. Each uses **only
+real engine methods**: none reimplements state transitions, cloning, dependency checks, resource
+counting, approval decisions or assignment rules. In the *Patterns in action* panel a workaround step
+is tagged **temporary web stand-in**, and an engine class the GUI cannot use is tagged **not used**.
 
-In the UI, every step done by a stand-in is labelled **"(temporary web stand-in)"** in the
-*Patterns in action* panel. Steps whose designed class does not exist yet are labelled
-**"not yet integrated"**.
-
-> **Member numbers** are taken from the comments in the code (`Member 1` in iterator files,
-> `Member 3` for Prototype/Builder, `Member 4` for Participant/approval chain,
-> `Member 7` for the Facade/Adapter layer). Command/Memento are assumed to be Member 5.
-> Correct them if your team split differs.
-
-All engine access goes through **one class, `web/server/EngineGateway`**. Its public methods mirror
-`WorkflowManager` (`createInstance`, `start`, `complete`, `getStatus`) plus the other actions.
-`main.cpp` and the browser code never touch the engine directly, so every swap below changes only
-`EngineGateway.cpp` internals, `build.ps1`, or the stand-in file itself.
+Members: 1 Composite + Iterator, 2 State + Template Method, 3 Decorator + Prototype,
+4 Mediator + Chain, 5 Command + Memento, 6 Observer + Strategy, 7 Builder + Facade.
 
 ---
 
-## 1. `server/EngineGateway` internals: stands in for `WorkflowManager` (Facade, Member 7)
+## The 14 patterns in a normal GUI session
 
-**Why:** every `WorkflowManager` method throws `"waiting for integration"`, and the constructor
-needs a non-null `TaskRouter*`, which does not exist yet.
+| Pattern | GUI action | Real classes that run | Status |
+|---|---|---|---|
+| Builder | Server start (templates) or *Create workflow* in the wizard | `DefinitionBuilder`, `CodeDefinitionBuilder` (`addStage`, `addTask`, `addDependency`, `setApprovalChain`, `setAssignmentStrategy`, `addDecorator`), driven by `GenericDirector` | Real |
+| Prototype | *Create case* | `DefinitionRegistry`, `WorkflowDefinition::cloneRoot`, `WorkComponent::clone` | Real |
+| Composite | Every case view; every action | `WorkStage`, `WorkItem` (nested sub-stages, `getChild`) | Real |
+| Iterator | Every case view; *Available work* | `DepthFirstIterator` (`createIterator`), `ReadyTaskIterator` | Real |
+| Decorator | Any action on a task marked `"audit"` | `WorkComponentDecorator`, `AuditDecorator` (via `addDecorator`) | Real; the builder only offers `"audit"` |
+| Template Method | *execute* | `WorkItem::execute`, `ManualTask` / `AutomatedTask` / `ApprovalTask::perform`, `AutomatedTask::setStepSucceeds` | Real |
+| State | Every action, including every refusal | `WorkItemState` and its 8 concrete states | Real |
+| Command | Every action button; *Undo* | `CommandProcessor` (`run`, `undo`, `getHistory`) and the 8 concrete commands | Real; `execute` and auto-assign have no command, so they are not undoable |
+| Memento | *Snapshot* / *Restore* | `WorkflowInstance::createSnapshot` / `restoreSnapshot`, `InstanceSnapshot`, `SnapshotHistory` | Real: status, case data and tree are saved and restored |
+| Mediator | *Start*, *makeAvailable*, assigning a task that needs a resource | `ResourceCoordinator` (`addDependency`, `canBecomeAvailable`, `requestResource`, `release`), `Participant`, `Resource` | Real |
+| Chain of Responsibility | *execute* on an approval task | `ApprovalHandler`, `RoleApproverHandler`, `FinalApproverHandler`, `ApprovalRequest`; the result is read from `ApprovalTask::getChainPath` / `getChainOutcome` / `getChainDecidedBy` | Real |
+| Observer | Every state change | `WorkflowEventBus`, `Event`, `DependencyActivator` (unlocks dependants through the Mediator), `AuditLogger`, `NotificationSender`, `MonitoringCollector` | Real; `EngineGateway` publishes the events |
+| Strategy | *auto-assign* | `TaskRouter`, `RoleBasedAssignment`, `WorkloadAssignment` | Real; the workload that `WorkloadAssignment` reads is fed by a workaround (below) |
+| Facade | (none) | `WorkflowManager` | **Not usable by a GUI** (below); `EngineGateway` does the same steps with the real classes |
 
-**What it does today:** `createInstance` → `WorkflowDefinition::cloneRoot()` + `new WorkflowInstance`;
-`start` → `ResourceCoordinator::canBecomeAvailable` + `makeAvailable()` on each task;
-`complete` and the other actions → the work item's own lifecycle method inside a command.
+There are no references to the removed Adapter (or its connectors), to `ChainProbe`, or to the old
+hard-coded scenarios anywhere in `web/`.
 
-**Swap when `WorkflowManager` works:**
-1. Give `EngineGateway` a `WorkflowManager` member, built with the real `DefinitionRegistry` and `TaskRouter`.
-2. In `EngineGateway::createInstance/start/complete/getStatus`, call the facade instead of the
-   direct steps. Keep the JSON building and the trace lines (change their `kind` from
-   `pending`/`temporary` to `engine`).
-3. The facade needs a way to look up an instance and a task by ID (instance ID + task ID).
-   `WorkItem::getId()` (Member 2) already exists for this.
-4. `main.cpp` and `public/` stay unchanged.
+---
 
-## 2. `server/WebCommands`: stands in for `AssignCommand`, `CompleteCommand`, `ApproveCommand`, `RejectCommand`, `CancelCommand` (Command, Member 5)
+## What is still worked around, and why
 
-**Why:** the five commands do not compile:
-- `previousState = item->getState();` assigns `const WorkItemState*` to `std::string`.
-- `item->restoreState(previousState);` uses one argument, but the contract takes `(state, assignee)`.
-- `AssignCommand` calls `item->setAssignee(string)`, which does not exist on `WorkComponent`.
+### 1. `server/EngineGateway` does the Facade's job (Member 7)
 
-`build.ps1` therefore leaves them out (`$ExcludedEngineFiles`).
+`WorkflowManager` compiles and links, and its `createInstance`, `start` and `getStatus` work. But a
+GUI cannot use it for a case it shows:
+- `createInstance()` returns only an id. The instance's tree, mediator and command processor live in a
+  private `Runtime`, with no accessor, so the case cannot be shown or acted on.
+- It offers only `complete()`, and `complete()` requires the task to be `InProgress`. No Facade
+  operation can assign or start a task, so `complete()` always throws "Task must be InProgress before
+  completion". (Checked with a small program on the real classes: create, start, then complete the
+  first task.)
+- It publishes no events, so the Observer listeners would never run.
 
-**What it does today:** `WebCommand : WorkflowCommand` is run by the **real** `CommandProcessor`.
-`execute()` saves `(getState(), getAssignee())` of every task, then runs one user action (real
-engine calls only). `undo()` calls `WorkComponent::restoreState(state, assignee)` on every task.
-This is the back door the shared contract reserves for undo. It then calls a hook that puts case
-data and slot allocations back.
+Routing a GUI case through it would mean acting on a second, hidden copy, so the GUI does not use it.
+`EngineGateway` mirrors its interface (`createInstance`, `start`, `complete`, `getStatus`) and does the
+same steps with the same real classes: clone from `DefinitionRegistry`, a per-instance
+`ResourceCoordinator` and `CommandProcessor`, dependencies from `getDependencies()`, the real commands,
+the real `TaskRouter`, and real `Event`s on a per-instance `WorkflowEventBus`. Every action records
+`WorkflowManager::<operation>` as **not used** in the *Patterns in action* panel, with this reason.
 
-**Swap:**
-1. Fix the five commands, then remove their names from `$ExcludedEngineFiles` in `build.ps1`.
-2. In `EngineGateway::act`, replace `new WebCommand(action, ...)` with the matching real command,
-   e.g. `new CompleteCommand(item)`.
-3. **Decide undo scope as a team.** A real `CompleteCommand` restores one item. A completion can also
-   cancel a branch (routing rule) and unlock dependants (Mediator). A per-item undo leaves those
-   effects in place. Either the commands store more state, or undo stays per-item and the demo
-   says so.
-4. Delete `WebCommands.h/.cpp`.
+**Swap:** give `WorkflowManager` accessors (instance, task by id, command processor, event bus) or the
+missing operations, then make `EngineGateway` hold a `WorkflowManager` and call it.
 
-## 3. `server/HistoryLog`: stands in for a readable `CommandProcessor` history (Member 5) and `AuditLogger` (Observer, Member 6)
+### 2. `scenarios/TaskLookup`: finding a task by id (Member 7)
 
-**Why:** `CommandProcessor` keeps its `stack` private, and `run()` returns `void`. `AuditLogger` does not exist.
+`WorkflowManager` keeps its `components` / `items` maps private. `TaskLookup` walks the tree with
+`createIterator()` and unwraps decorators with `getWrappedComponent()`, as
+`WorkflowManager::createInstance` does internally. **Swap:** use the Facade's lookup once it exists.
 
-**Swap:** when `AuditLogger` records events, or `CommandProcessor` exposes its history, have
-`EngineGateway::instanceView` read the history from there. Then remove the `inst.log.add(...)` calls
-and delete `HistoryLog.h/.cpp`.
+### 3. `scenarios/StageNames`: stage names (Member 1)
 
-## 4. `server/PendingIntegration`: the only wiring point for Observer and Strategy (Member 6)
+`WorkStage` now declares a private `name` member, but no constructor, setter or getter uses it, so the
+name given to `CodeDefinitionBuilder::addStage` cannot be read back. `StageNames` matches each built
+stage to the spec stage with the same depth and the same tasks beneath it. **Swap:** when `WorkStage`
+exposes its name, read it in `EngineGateway::treeNode` and delete `StageNames`.
 
-**Why:** `EventPublisher`, `EventListener`, `DependencyActivator`, `AuditLogger`, `TaskRouter` and
-`AssignmentStrategy` do not exist yet.
+### 4. `EngineGateway::syncWorkload`: participant workload (Members 4 / 6)
 
-**What it does today:**
-- `publishTransition()` is called after every successful transition. When an item becomes
-  complete, it calls the real `Colleague::changed("completed")`. That makes the real
-  `ResourceCoordinator::notifyChanged` unlock dependants. This is the job `DependencyActivator`
-  will do.
-- `chooseParticipant()` returns the participant picked in the UI.
+`WorkloadAssignment` picks the participant with the lowest `Participant::workload()`, but no engine
+class calls `itemAssigned()` / `itemReleased()`. The gateway calls those real methods when a task's
+holder changes. **Swap:** when `AssignCommand` (or `WorkItem` / the Mediator) updates the workload,
+delete `syncWorkload`.
 
-**Swap:**
-1. Add the Member 6 classes to `include/` and `src/` (the build picks up new `src/*.cpp` automatically).
-2. Replace the bodies of the two functions with `eventPublisher->publish(...)` and
-   `taskRouter->route(item, candidates)`, as the `TODO(Member 6)` comments say.
-3. Register `DependencyActivator` and `AuditLogger` as listeners in `EngineGateway::build()`.
-4. Delete the stand-in lines. The two call sites in `EngineGateway` stay.
+---
 
-## 5. `scenarios/RecordingDefinitionBuilder`: stands in for `CodeDefinitionBuilder::addDependency / setApprovalChain / addDecorator / setAssignmentStrategy` (Builder, Member 3)
+## Stand-ins removed
 
-**Why:** those four steps throw `"not integrated yet"`, so `EnrolmentDirector::construct` would throw.
+| Removed | Because |
+|---|---|
+| Case-data copy beside each snapshot | `InstanceSnapshot` now saves `WorkflowInstance::getData()`, and `restoreSnapshot` restores it |
+| `scenarios/ChainProbe` | `ApprovalTask` keeps the result of its last chain run (`getChainPath`, `getChainOutcome`, `getChainDecidedBy`) |
+| Copies of the final approver's name kept for `FinalApproverHandler` | It now takes `const std::string&` and the base class stores a copy |
+| `scenarios/ChainTrace`, `scenarios/StageNameRecorder`, `server/PendingIntegration` | Replaced earlier by the real classes |
+| `scenarios/EducationScenario`, `HealthcareScenario`, `HealthcareDirector`, `RuleHelpers`, `Staff`, `Scenario.h` | Industry code is now data: `web/templates/*.json` + `GenericDirector` + `ScenarioRuntime` |
+| The `/api/meta` endpoint | Nothing used it |
 
-**What it does today:** it is a second `DefinitionBuilder`. `addStage`/`addTask` go straight to the
-real `CodeDefinitionBuilder`. Dependencies and chains are recorded. Then:
-- the dependencies are given to the real `ResourceCoordinator::addDependency` for each instance;
-- the chain is set with the real `ApprovalTask::setFirstHandler`;
-- names and IDs are set with Member 2's `WorkItem::setName/setId`.
+---
 
-**Swap:**
-1. When `CodeDefinitionBuilder` stores dependencies and chains (and `WorkflowDefinition` exposes
-   them), use `CodeDefinitionBuilder` directly in `EducationScenario/HealthcareScenario::buildDefinition`.
-2. Replace `wire()` in `EngineGateway` with whatever the definition/facade provides to register
-   an instance's dependencies.
-3. Delete `RecordingDefinitionBuilder.h/.cpp`.
+## Engine behaviour the GUI shows as it is
 
-## 6. `scenarios/NameLookup`: stands in for stage names (Member 1) and typed task access (shared contract)
-
-**Why:** `WorkStage` has no name. `WorkComponent` has no `getName()/getId()` and no typed child
-accessor, so the web layer uses `dynamic_cast` to reach `WorkItem`, `AutomatedTask` and `ApprovalTask`.
-
-**What it does today:** stage names are keyed by **tree position** (path of child indices). This
-works for every deep clone. `findTask()` and `allTasks()` use the tree's own `createIterator()`.
-
-**Swap:** when `WorkStage` gets a name, read it in `EngineGateway::treeNode` and drop
-`NameLookup::stageName`. If the team adds a lookup-by-ID to `WorkComponent` or `WorkflowInstance`,
-use it in `findTask` and drop the casts.
-
-## 7. `scenarios/ParticipantDirectory`: stands in for a name and role on `Participant` (Member 4)
-
-**Why:** `Participant` only has `workload()`, so the UI could not show who a task is assigned to.
-
-**Swap:** when `Participant` has `getName()/getRole()`, read those in `EngineGateway::treeNode`.
-Keep the seeding code, which is industry data, and drop the name/role fields here.
-
-## 8. `scenarios/TestConnectors` + `temporary_stubs/`: stand in for `Connector`, `ConnectorManager`, `PaymentConnector`, `MessagingConnector`, `StudentRecordsConnector` (Adapter, Member 7)
-
-**Why:** none of the Adapter classes exist in `include/`/`src/`. `AutomatedTask.cpp` includes
-`Connector.h` and `ConnectorManager.h`, which exist only as stubs (see section 13).
-
-**What it does today:** `build.ps1` adds `-I web/temporary_stubs` (after `-I include`, so real
-headers always win) and compiles the two stub `.cpp` files. `TestPaymentConnector` (medical-aid
-pre-authorisation), `TestMessagingConnector` (SMS) and `TestStudentRecordsConnector` (ID check,
-NSC results) wrap fake external systems. The spec allows this: "external services may be
-represented by documented test adapters or stubs". The stub `ConnectorRequest` carries no data,
-so the gateway calls `setContext(caseData)` on the adapter just before `AutomatedTask::execute()`.
-
-**Swap:**
-1. Add the real classes to `include/`/`src/`.
-2. Follow section 13 to drop `web/temporary_stubs/`.
-3. In `EngineGateway::build()`, register the real adapters with the real `ConnectorManager`. Pass
-   case data through the real `ConnectorRequest` instead of `setContext`.
-4. Delete `TestConnectors.h/.cpp`.
-
-## 9. `scenarios/ChainTrace`: stands in for approval events (Observer, Member 6)
-
-**Why:** handlers do not report which one handled a request. The demo must show escalation along the chain.
-
-**What it does today:** `TracingRoleApproverHandler`/`TracingFinalApproverHandler` subclass the
-real handlers. Each reports "request reached me" and then calls the **real** `handleRequest`, which
-makes the decision.
-
-**Swap:** when the chain publishes events (or `ApprovalRequest` records its path), use plain
-`RoleApproverHandler`/`FinalApproverHandler` in the scenarios. Then delete `ChainTrace.h/.cpp`.
-
-## 10. Definition kept in the gateway: stands in for `DefinitionRegistry` (Prototype manager, Member 3)
-
-**Why:** `DefinitionRegistry.h` has no `.cpp`, so it would not link.
-
-**Swap:** when `DefinitionRegistry.cpp` exists, `registerDefinition()` each built definition in
-`EngineGateway::build()`. Look it up with `get(name)` in `createInstance`, or let `WorkflowManager` do it.
-
-## 11. Case data next to snapshots: stands in for `WorkflowInstance::data` accessors (Member 5)
-
-**Why:** `WorkflowInstance` has a private `data` map with no getter or setter, so per-instance
-case data (urgency, decision, slot holder) lives in `EngineGateway::Instance::data`. A copy is
-kept beside each `InstanceSnapshot`.
-
-**Swap:** when `WorkflowInstance` exposes `getData()/setData()`, store the case data there. The
-snapshot then carries it automatically.
-
-## 12. Build flags (not code, approved)
-
-- `-include cstddef` for engine files: `src/WorkStage.cpp` uses `size_t` without `<cstddef>` (Member 1).
-  Remove the flag once the include is added.
-- `-I <project root>`: `src/WorkflowManager.cpp` includes `"include/WorkflowManager.h"`. Remove once it
-  includes `"WorkflowManager.h"`.
-
-## 13. `temporary_stubs/`: copies of the `Connector` / `ConnectorManager` test stubs (Adapter, Member 7)
-
-**Why:** the web build must work from the repository alone (`include/`, `src/`, `web/`). The only
-files it needed from outside those folders were four test stubs in the local-only `tests/stubs/`:
-`Connector.h`, `Connector.cpp`, `ConnectorManager.h` and `ConnectorManager.cpp`.
-`src/AutomatedTask.cpp` includes the two headers, and nothing in `include/` provides them.
-
-**What it is:** byte-for-byte copies of those four files. The only change is a two-line TEMPORARY
-header at the top. `tests/stubs/` itself was not touched. The stubs for `ApprovalHandler`,
-`Participant`, `WorkCoordinator` and `WorkIterator` were **not** copied, because the build uses
-the real headers in `include/`.
-
-**How `build.ps1` uses it:**
-- `-I web/temporary_stubs` comes after `-I include`, so a real header with the same name always wins.
-- Both `.cpp` files are compiled.
-- Every path is derived from `$PSScriptRoot`, so no absolute path is involved.
-
-**Swap when Member 7's real `Connector` and `ConnectorManager` exist in `include/`/`src/`:**
-1. Delete `web/temporary_stubs/`.
-2. In `build.ps1`, remove `$StubDir`, the `$stubs` line, `'-I', $StubDir`, `$StubDir` in `$headerDirs`,
-   and the `foreach ($f in $stubs)` line.
-3. Adjust `scenarios/TestConnectors` (section 8) to the real interface:
-   `ConnectorRequest` will probably carry data, and `ConnectorManager::registerConnector` may be
-   named differently.
-
-## Not stood in for (shown honestly as gaps)
-
-| Gap | Owner | What the demo does |
+| Behaviour | Owner | What the GUI does |
 |---|---|---|
-| `ReadyTaskIterator::isReadyItem` returns **Completed** items | Member 1 | Its real output is shown under each instance. "Available work" uses `DepthFirstIterator`. |
-| `DepthFirstIterator`/`createIterator()` need `reset()` before first use | Member 1 | The web layer calls `reset()`. Consider pushing the root in the constructor. |
-| `Resource` capacity never consumed (`isFree()` = `capacity > 0`) | Member 4 | Always calls the real `requestResource`/`release` and shows what the engine says. A GP with capacity 1 can currently be booked twice. Contention appears with no web change once capacity is real. |
-| Concrete decorators have no `.cpp` | Decorator owner | Not applied. Recorded as "not yet integrated". |
-| No routing/XOR mechanism in the engine | Members 3/6 | The routing rule lives in scenario code; the engine `cancel()`s the branch not taken. |
-| `ApprovalRequest` value always 0 | Member 2 (**fixed**) | `ApprovalTask::setRequestValue` now carries a real value. |
+| A command's `undo()` restores only its own task: unlocked dependants, cancelled branches and taken resources stay | Member 5 | Shows the real result; each rule-driven cancel is its own command, so it is undone separately |
+| `addDecorator` only knows `"audit"`; its sink is hard-wired to `std::cout` | Members 3/7 | Only "audit" is offered; the console is captured and the audit lines are shown |
+| Approval handlers call `approve()` / `reject()` on the raw `ApprovalTask`, bypassing its decorators | Member 4 | Shown in the trace |
+| `DefinitionRegistry::registerDefinition` takes a raw pointer; the builder returns a `shared_ptr` | Members 3/7 | Registers a copy (`new WorkflowDefinition(*built)`) |
+| Dependencies are AND-only (`canBecomeAvailable` needs every prerequisite complete) | Member 4 | Decisions cancel the branches not taken, so each branch must finish on its own (noted in the wizard) |
+| `TaskRouter` strategies call `WorkItem::assignTo` directly, not through `AssignCommand` | Member 6 | Auto-assignment is labelled not undoable |
+| `execute()` has no command | Members 2/5 | Called directly; labelled not undoable |
+| `DeadlineEscalator` needs deadlines tracked and a clock event | Member 6 | Not used; escalation is the *escalate* button (`EscalateCommand`) |

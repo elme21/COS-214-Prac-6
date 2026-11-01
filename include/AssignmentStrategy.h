@@ -16,7 +16,7 @@ class Participant;   // Person 4
  *
  * @author Logan (Observer and Strategy)
  * @date 2026-10-28
- * @ingroup StrategyPattern
+ * 
  */
 
 /**
@@ -31,7 +31,7 @@ class Participant;   // Person 4
  * No existing class changes.
  *
  * @invariant Strategies never own the participants or the item.
- * @ingroup StrategyPattern
+ * 
  * @see TaskRouter, RoleBasedAssignment, WorkloadAssignment, RuleBasedAssignment
  */
 class AssignmentStrategy {
@@ -40,7 +40,7 @@ public:
         : candidates(candidates) {}
     virtual ~AssignmentStrategy() {}
 
-    virtual void route(WorkItem* item) = 0;
+    virtual bool route(WorkItem* item) = 0;
 
     /** Replace the pool of participants this rule chooses from. */
     void setCandidates(const std::vector<Participant*>& c) { candidates = c; }

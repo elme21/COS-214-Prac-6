@@ -2,6 +2,7 @@
 #define WORKSTAGE_H
 
 #include <vector>
+#include <string>
 #include "WorkComponent.h"
 
 /**
@@ -15,6 +16,7 @@ class WorkStage : public WorkComponent
 {
     private:
         std::vector<WorkComponent*> children;   ///< Owned children, in execution order
+        std::string name;
 
     public:
         /** @brief Creates an empty stage. */

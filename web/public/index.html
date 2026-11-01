@@ -4,18 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TIVIDY Live Demo</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="logo">TIVIDY</span>
-      <span class="tagline">one workflow engine, two industries</span>
+      <span class="tagline">one workflow engine, any industry</span>
     </div>
     <nav class="tabs" id="tabs" aria-label="Views"></nav>
     <div class="top-actions">
+      <button class="btn primary" id="newScenario" type="button" title="Build a new workflow step by step">+ New workflow</button>
       <button class="btn ghost" id="themeToggle" type="button" title="Switch light / dark">Theme</button>
-      <button class="btn danger" id="resetDemo" type="button" title="Rebuild both scenarios from scratch">Reset demo</button>
+      <button class="btn danger" id="resetDemo" type="button" title="Remove custom scenarios and reload the templates">Reset demo</button>
     </div>
   </header>
 

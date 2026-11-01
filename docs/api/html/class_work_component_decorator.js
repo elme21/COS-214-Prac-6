@@ -1,0 +1,26 @@
+var class_work_component_decorator =
+[
+    [ "WorkComponentDecorator", "class_work_component_decorator.html#a76bc9271ab3bd72d966332bdffd47784", null ],
+    [ "WorkComponentDecorator", "class_work_component_decorator.html#a99fdf639df5a362fc484f8dc45b10964", null ],
+    [ "~WorkComponentDecorator", "class_work_component_decorator.html#aeb89cf1f968352a8c685a27434782d51", null ],
+    [ "add", "class_work_component_decorator.html#a0f83d0cc039da1478fb20beae7fce00a", null ],
+    [ "approve", "class_work_component_decorator.html#ae6423cebebd131f2fec8e697c612888c", null ],
+    [ "assignTo", "class_work_component_decorator.html#a6d0fe0c827a89c711954ba5cc48bf3f0", null ],
+    [ "cancel", "class_work_component_decorator.html#ab3dae01ee977a841da1ef0e70bce5390", null ],
+    [ "complete", "class_work_component_decorator.html#a4a5b2d899fada25f0f163cbd8ca00faa", null ],
+    [ "createIterator", "class_work_component_decorator.html#a32f4bc6172c751bb9fdf8fcb1c9ffa27", null ],
+    [ "escalate", "class_work_component_decorator.html#a66f9478bd11bd57c9d477f15e99bb9ff", null ],
+    [ "execute", "class_work_component_decorator.html#a0ef7b33f4c1bab95271caf5019b9aa64", null ],
+    [ "getAssignee", "class_work_component_decorator.html#afdf07896ed54236a5021286ca7a8000f", null ],
+    [ "getChild", "class_work_component_decorator.html#ad92fb9b0bb1aef76d2fddb79cbaf8785", null ],
+    [ "getPriority", "class_work_component_decorator.html#a6c5aada1f812f4afb80cce7a849c903a", null ],
+    [ "getState", "class_work_component_decorator.html#acc8f6fe1c81c00f978b92a81f1d6e9eb", null ],
+    [ "getWrappedComponent", "class_work_component_decorator.html#a3c7b64894307113ae236c39d94c28f60", null ],
+    [ "inner", "class_work_component_decorator.html#ab95d6267dc46771dcf35d91c727c885e", null ],
+    [ "makeAvailable", "class_work_component_decorator.html#abcabbc7227b32a0f7f9851b8c0ba5466", null ],
+    [ "operator=", "class_work_component_decorator.html#a12a4df08ea91fb1c569d46a293bc12f1", null ],
+    [ "reject", "class_work_component_decorator.html#a35e9b2789f5b15db9046bbc324c03090", null ],
+    [ "remove", "class_work_component_decorator.html#a0470d6061647381eb5b73836c39198db", null ],
+    [ "restoreState", "class_work_component_decorator.html#a373efe5bd56e800870049d001eaa62a0", null ],
+    [ "start", "class_work_component_decorator.html#ad20c052d4f8e33acd16e86b16ebba691", null ]
+];

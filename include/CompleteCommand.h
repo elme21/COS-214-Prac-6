@@ -7,10 +7,9 @@
  */
 
 #include "WorkflowCommand.h"
+#include "WorkComponent.h" 
+#include "Participant.h"
 
-class WorkComponent;
-class WorkItemState;
-class Participant;
 
 /**
  * @class CompleteCommand

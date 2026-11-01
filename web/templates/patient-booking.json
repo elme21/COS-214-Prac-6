@@ -1,0 +1,135 @@
+{
+  "name": "Patient booking",
+  "industry": "Healthcare",
+  "description": "Reception registers the patient and the medical aid is checked automatically; a nurse triages. Urgent patients go straight to the doctor on duty; routine patients compete for a limited doctor slot, get a reminder, see a GP, and a specialist referral is approved by a chain whose depth depends on its cost.",
+  "idPrefix": "HC",
+  "subjectField": "name",
+  "inputs": [
+    { "key": "name", "label": "Patient name", "type": "text" },
+    { "key": "age", "label": "Age", "type": "number" },
+    { "key": "complaint", "label": "Complaint", "type": "text" },
+    { "key": "medicalAid", "label": "Medical aid", "type": "text" },
+    { "key": "memberNumber", "label": "Member number", "type": "text" },
+    { "key": "medicalAidStatus", "label": "Medical aid status", "type": "choice", "options": ["active", "suspended"] },
+    { "key": "cellphone", "label": "Cellphone", "type": "text" },
+    { "key": "suggestedUrgency", "label": "Urgency suggested at intake", "type": "choice", "options": ["routine", "urgent"] },
+    { "key": "referral", "label": "Referral needed", "type": "text" },
+    { "key": "referralValue", "label": "Referral cost (R)", "type": "number" }
+  ],
+  "participants": [
+    { "id": "mthembu", "name": "Nandi Mthembu", "role": "Receptionist" },
+    { "id": "mahlangu", "name": "Sister Grace Mahlangu", "role": "Nurse" },
+    { "id": "dube", "name": "Sister Zanele Dube", "role": "Nurse" },
+    { "id": "naidoo", "name": "Dr Kavitha Naidoo", "role": "GP" },
+    { "id": "mokoena", "name": "Dr Themba Mokoena", "role": "GP" },
+    { "id": "vdmerwe", "name": "Dr Anri van der Merwe", "role": "GP" },
+    { "id": "sibiya", "name": "Dr Sizwe Sibiya", "role": "Doctor on duty" },
+    { "id": "adams", "name": "Dr Farouk Adams", "role": "Specialist physician" },
+    { "id": "system", "name": "TIVIDY automation", "role": "System" }
+  ],
+  "resources": [
+    { "id": "naidooSlots", "name": "Dr Naidoo - appointment slots", "capacity": 0, "owner": "naidoo" },
+    { "id": "mokoenaSlots", "name": "Dr Mokoena - appointment slots", "capacity": 2, "owner": "mokoena" },
+    { "id": "vdmerweSlots", "name": "Dr van der Merwe - appointment slots", "capacity": 1, "owner": "vdmerwe" }
+  ],
+  "stages": [
+    {
+      "id": "Intake", "name": "Intake",
+      "tasks": [
+        { "id": "RegisterPatient", "name": "Register Patient", "type": "manual", "role": "Receptionist",
+          "strategy": "role", "help": "Reception captures the patient's details." },
+        { "id": "VerifyMedicalAid", "name": "Verify Medical Aid", "type": "automated", "role": "System",
+          "dependsOn": ["RegisterPatient"], "strategy": "role",
+          "successRule": { "field": "medicalAidStatus", "op": "==", "value": "active" },
+          "help": "Automated medical-aid check. Fails for a suspended membership: escalate, then reassign to reception, who completes it as a cash patient." }
+      ]
+    },
+    {
+      "id": "Triage", "name": "Triage",
+      "tasks": [
+        { "id": "TriageAssessment", "name": "Triage Assessment", "type": "manual", "role": "Nurse",
+          "dependsOn": ["VerifyMedicalAid"], "strategy": "workload",
+          "help": "ROUTING POINT: when it completes, the nurse chooses the urgent or the routine branch." }
+      ]
+    },
+    {
+      "id": "EmergencyCare", "name": "Emergency care",
+      "tasks": [
+        { "id": "EmergencyConsultation", "name": "Emergency Consultation", "type": "manual", "role": "Doctor on duty",
+          "dependsOn": ["TriageAssessment"], "strategy": "role", "help": "Urgent branch only.",
+          "onComplete": { "outcome": "Treated by the doctor on duty" } }
+      ]
+    },
+    {
+      "id": "Booking", "name": "Booking",
+      "tasks": [
+        { "id": "BookAppointment", "name": "Book Appointment Slot", "type": "manual", "role": "GP",
+          "dependsOn": ["TriageAssessment"], "resource": "@assignee",
+          "help": "Assigning to a GP requests that GP's slot Resource from the ResourceCoordinator. No free slot? escalate, then reassign to another GP.",
+          "onCancel": { "cancel": ["SendReminder", "GPConsultation", "SpecialistReferral"], "outcome": "Booking cancelled" } },
+        { "id": "SendReminder", "name": "Send Reminder", "type": "automated", "role": "System",
+          "dependsOn": ["BookAppointment"], "strategy": "role", "help": "Automated reminder; only after booking." }
+      ]
+    },
+    {
+      "id": "Consultation", "name": "Consultation",
+      "tasks": [
+        { "id": "GPConsultation", "name": "GP Consultation", "type": "manual", "role": "GP",
+          "dependsOn": ["BookAppointment"],
+          "help": "Only after booking. Patient did not arrive? cancel() it (no-show).",
+          "onComplete": { "release": ["BookAppointment"] },
+          "onCancel": { "release": ["BookAppointment"], "cancel": ["SendReminder", "SpecialistReferral"], "outcome": "Patient did not attend (no-show)" } }
+      ],
+      "stages": [
+        {
+          "id": "Referral", "name": "Referral",
+          "tasks": [
+            { "id": "SpecialistReferral", "name": "Specialist Referral", "type": "approval", "role": "Nurse",
+              "dependsOn": ["GPConsultation"], "decorators": ["audit"], "strategy": "workload",
+              "requestValue": { "field": "referralValue" },
+              "chain": [
+                { "label": "Approver level 1", "role": "Nurse", "limit": 500 },
+                { "label": "Approver level 2", "role": "GP", "limit": 2500 },
+                { "label": "Approver level 3", "role": "Specialist physician", "limit": 12000 },
+                { "label": "Final approver", "role": "Clinical manager (scheme limit)", "limit": 25000 }
+              ],
+              "help": "Wrapped in an AuditDecorator. execute() sends the referral cost down the chain.",
+              "onComplete": { "outcome": "Referral approved: {referral}" },
+              "onReject": { "outcome": "Referral declined (R{referralValue})" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    { "id": "urgency", "label": "Triage outcome", "after": "TriageAssessment", "mode": "manual",
+      "branches": [
+        { "id": "urgent", "label": "Urgent", "tasks": ["EmergencyConsultation"] },
+        { "id": "routine", "label": "Routine", "tasks": ["BookAppointment", "SendReminder", "GPConsultation", "SpecialistReferral"] }
+      ],
+      "rules": [ { "field": "suggestedUrgency", "op": "==", "value": "urgent", "branch": "urgent" } ],
+      "default": "routine" }
+  ],
+  "seeds": [
+    { "label": "Lerato Molefe", "summary": "58, chest pain and shortness of breath - triage: urgent",
+      "data": { "name": "Lerato Molefe", "age": 58, "complaint": "Chest pain, shortness of breath", "medicalAid": "Discovery Health",
+                "memberNumber": "DH-30419927", "medicalAidStatus": "active", "cellphone": "0823344556", "suggestedUrgency": "urgent",
+                "referral": "Cardiology", "referralValue": 9800 } },
+    { "label": "Johan Pretorius", "summary": "34, knee injury - routine; physio referral R450 (approver level 1)",
+      "data": { "name": "Johan Pretorius", "age": 34, "complaint": "Knee pain after rugby", "medicalAid": "Bonitas",
+                "memberNumber": "BN-77120345", "medicalAidStatus": "active", "cellphone": "0794455667", "suggestedUrgency": "routine",
+                "referral": "Physiotherapy", "referralValue": 450 } },
+    { "label": "Mandla Zungu", "summary": "61, hypertension follow-up - routine; cardiology R2 200 (approver level 2)",
+      "data": { "name": "Mandla Zungu", "age": 61, "complaint": "Blood pressure follow-up", "medicalAid": "GEMS",
+                "memberNumber": "GE-00982211", "medicalAidStatus": "active", "cellphone": "0836677889", "suggestedUrgency": "routine",
+                "referral": "Cardiology", "referralValue": 2200 } },
+    { "label": "Bongani Nkosi", "summary": "45, chronic back pain - routine; MRI R9 800 (approver level 3)",
+      "data": { "name": "Bongani Nkosi", "age": 45, "complaint": "Chronic lower back pain", "medicalAid": "Momentum Health",
+                "memberNumber": "MM-55410098", "medicalAidStatus": "active", "cellphone": "0717788990", "suggestedUrgency": "routine",
+                "referral": "MRI lumbar spine", "referralValue": 9800 } },
+    { "label": "Fatima Ebrahim", "summary": "29, migraines - medical aid SUSPENDED (automated check fails); R31 500 referral rejected by the final approver",
+      "data": { "name": "Fatima Ebrahim", "age": 29, "complaint": "Recurring migraines", "medicalAid": "Medshield",
+                "memberNumber": "MS-12003344", "medicalAidStatus": "suspended", "cellphone": "0648899001", "suggestedUrgency": "routine",
+                "referral": "Neurology + experimental treatment", "referralValue": 31500 } }
+  ]
+}

@@ -8,6 +8,7 @@
 #include <string>
 #include <chrono>
 #include <memory>
+#include <map>
 
 class WorkComponent;
 class WorkflowInstance;
@@ -25,6 +26,7 @@ class InstanceSnapshot {
 private:
     string savedStatus;                             /**< Preserved workflow status string. */
     shared_ptr<WorkComponent> savedRoot;           /**< Deep-cloned root component tree state. */
+    map<string, string> savedData;                 /**< Preserved instance payload data map. */
     chrono::system_clock::time_point takenAtTime;   /**< Timestamp when snapshot was captured. */
 
     friend class WorkflowInstance;
@@ -41,8 +43,9 @@ public:
      * 
      * @param status Current status of the workflow instance.
      * @param rootComponent Deep-cloned root WorkComponent tree.
+     * @param data Instamce payload data map.
      */
-    InstanceSnapshot(const string& status, shared_ptr<WorkComponent> rootComponent);
+    InstanceSnapshot(const string& status, shared_ptr<WorkComponent> rootComponent, const map<string, string>& data);
 
     /**
      * @brief Returns a human-readable label for the snapshot.
@@ -61,6 +64,12 @@ public:
      * @return Shared pointer to the saved root WorkComponent.
      */
     shared_ptr<WorkComponent> getSavedRoot() const;
+
+    /**
+     * @brief Accesses the saved instance payload data map.
+     * @return Const reference to the saved data map.
+     */
+    const map<string, string>& getSavedData() const;
 };
 
 #endif
