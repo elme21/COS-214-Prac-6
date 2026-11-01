@@ -1,0 +1,9 @@
+# Start the app with:  docker compose up --build
+# Then open http://localhost:8080
+services:
+  tividy:
+    build: .
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+ 
