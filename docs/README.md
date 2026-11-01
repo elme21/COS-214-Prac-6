@@ -97,7 +97,7 @@ These are the most current and comprehensive documents for TIVIDY:
 
 ## Miscellaneous
 
-- **[Slide Show](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Slide%20show%20pdf%20version.pdf)** 
+- **[Slide Show](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/slide%20show%20pdf%20version.pdf)** 
   <br>*A link to the Slide show that will be used during the presentation*
 
 - **[Implementation planning document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Cos%20214%20prac%206_assignment%20planning.pdf)** 
