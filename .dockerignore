@@ -1,0 +1,19 @@
+# Version control and editor files
+.git
+.gitignore
+.vscode
+.idea
+
+# Build output (the Windows .exe must never reach the Linux image)
+web/build
+*.exe
+*.o
+*.obj
+
+# Generated documentation
+docs/api
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
