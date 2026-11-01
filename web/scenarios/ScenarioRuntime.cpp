@@ -1,7 +1,7 @@
 #include "ScenarioRuntime.h"
 
 #include "GenericDirector.h"
-#include "TaskLookup.h"
+#include "DefinitionTree.h"
 
 #include "CodeDefinitionBuilder.h"
 #include "DefinitionRegistry.h"
@@ -102,7 +102,7 @@ bool ScenarioRuntime::build(DefinitionRegistry& registry, std::string& error, st
     std::shared_ptr<WorkflowDefinition> definition = builder->getDefinition();
 
     // Display names (the builder uses the id as name; WorkItem::setName is the real setter).
-    std::vector<TaskRef> tasks = allTasks(definition->getRoot().get());
+    std::vector<TreeTask> tasks = definitionTasks(definition->getRoot().get());
     for (size_t i = 0; i < tasks.size(); ++i) {
         const TaskSpec* t = scenario.task(tasks[i].item->getId());
         if (t != nullptr) tasks[i].item->setName(t->name);

@@ -1,6 +1,7 @@
 // TIVIDY live demo - browser side.
 // This file contains NO workflow logic and NO industry: every scenario comes from the server as data
-// (a spec), and every button calls the C++ server, which calls the real engine through EngineGateway.
+// (a spec), and every button calls the C++ server, which calls the real engine's Facade
+// (WorkflowManager) through EngineGateway.
 'use strict';
 
 const STATES = ['Created', 'Available', 'Assigned', 'InProgress', 'Completed', 'Rejected', 'Cancelled', 'Escalated'];
@@ -21,24 +22,24 @@ const ACTIONS = [
 // working = real engine classes run; partial = real classes run with a known gap;
 // missing = cannot be used by the GUI.
 const PATTERNS = [
-  ['Facade', 'WorkflowManager', 'missing', 'Not used by the GUI. WorkflowManager keeps every instance\'s tree, mediator and command history private, so a case it creates cannot be shown or acted on, and its complete() needs an InProgress task that no Facade operation can produce. EngineGateway mirrors its interface and does the same steps with the real classes.'],
+  ['Facade', 'WorkflowManager', 'working', 'Every case is created, started, inspected and acted on through WorkflowManager: createInstance, start, getStatus, getTree / getTask / getItem / getTaskIds, makeAvailable, assign, start(task), complete, approve, reject, cancel, escalate, undo and restoreSnapshot. It has no execute(), per-task auto-assign, snapshot creation, resource or event operation, so those are direct calls on objects it hands out; the Patterns panel names each one.'],
   ['Builder', 'DefinitionBuilder, CodeDefinitionBuilder (+ GenericDirector)', 'working', 'Every scenario - template or new - is built by one GenericDirector on the real CodeDefinitionBuilder: stages, nested sub-stages, tasks, dependencies, chains, strategies and decorators.'],
-  ['Prototype', 'WorkComponent::clone, WorkflowDefinition::cloneRoot, DefinitionRegistry', 'working', 'Every definition sits in the real DefinitionRegistry; every instance is a deep clone of one.'],
-  ['Composite', 'WorkComponent, WorkStage, WorkItem', 'working', 'Stages with nested sub-stages and tasks, walked through getChild().'],
-  ['Iterator', 'WorkIterator, DepthFirstIterator, ReadyTaskIterator', 'working', '"Available work" is the real ReadyTaskIterator; task lists use DepthFirstIterator.'],
-  ['Decorator', 'WorkComponentDecorator, AuditDecorator (+ Secure, Validation, Priority)', 'partial', 'Tasks marked "audit" in a spec are wrapped by CodeDefinitionBuilder::addDecorator; its audit lines appear in the Patterns panel. The builder only offers "audit".'],
-  ['Template Method', 'WorkItem::execute + ManualTask / AutomatedTask / ApprovalTask::perform', 'working', 'execute runs the real skeleton. Automated steps succeed or fail per the spec (setStepSucceeds).'],
-  ['State', 'WorkItemState + 8 concrete states', 'working', 'Every refusal you see comes from a state returning false.'],
-  ['Command', 'WorkflowCommand, CommandProcessor + 8 concrete commands', 'working', 'Every action runs a real command; Undo pops getHistory(). A command\'s undo restores only its own task.'],
-  ['Memento', 'WorkflowInstance, InstanceSnapshot, SnapshotHistory', 'working', 'Snapshot / Restore use the real classes; the snapshot saves the status, the case data and a deep clone of the tree.'],
-  ['Mediator', 'WorkCoordinator, ResourceCoordinator, Colleague, Participant, Resource', 'working', 'Dependencies and live resource contention: requestResource() takes a place, release() gives it back.'],
+  ['Prototype', 'WorkComponent::clone, WorkflowDefinition::cloneRoot, DefinitionRegistry', 'working', 'Every definition sits in the real DefinitionRegistry; WorkflowManager::createInstance makes every case a deep clone of one.'],
+  ['Composite', 'WorkComponent, WorkStage, WorkItem', 'working', 'Stages with nested sub-stages and tasks, walked through getChild() from WorkflowManager::getTree().'],
+  ['Iterator', 'WorkIterator, DepthFirstIterator, ReadyTaskIterator', 'working', '"Available work" is the real ReadyTaskIterator over WorkflowManager::getTree(); definitions are read with DepthFirstIterator (createIterator).'],
+  ['Decorator', 'WorkComponentDecorator, AuditDecorator (+ Secure, Validation, Priority)', 'partial', 'Tasks marked "audit" in a spec are wrapped by CodeDefinitionBuilder::addDecorator; WorkflowManager::getTask hands out the decorator, so commands pass through it and its audit lines appear in the Patterns panel. The builder only offers "audit".'],
+  ['Template Method', 'WorkItem::execute + ManualTask / AutomatedTask / ApprovalTask::perform', 'working', 'execute runs the real skeleton on the task WorkflowManager::getTask returns (the Facade has no execute). Automated steps succeed or fail per the spec (setStepSucceeds).'],
+  ['State', 'WorkItemState + 8 concrete states', 'working', 'Every refusal you see comes from a state returning false, or from WorkflowManager checking the state or the Mediator first.'],
+  ['Command', 'WorkflowCommand, CommandProcessor + 8 concrete commands', 'working', 'Every action button runs a real command through WorkflowManager and the case\'s CommandProcessor; Undo is WorkflowManager::undo. execute() and auto-assign have no command. A command\'s undo restores only its own task.'],
+  ['Memento', 'WorkflowInstance, InstanceSnapshot, SnapshotHistory', 'working', 'Snapshot: WorkflowInstance::createSnapshot on the instance from WorkflowManager::getInstance (status, case data, deep clone of the tree). Restore: WorkflowManager::restoreSnapshot.'],
+  ['Mediator', 'WorkCoordinator, ResourceCoordinator, Colleague, Participant, Resource', 'working', 'WorkflowManager registers every task and dependency; live resource contention uses the case\'s ResourceCoordinator from WorkflowManager::getMediator (requestResource takes a place, release gives it back).'],
   ['Chain of Responsibility', 'ApprovalHandler, RoleApproverHandler, FinalApproverHandler, ApprovalRequest', 'working', 'Generic levels built from the spec; the real handlers decide. The path, decider and outcome are read from the result ApprovalTask keeps (getChainPath, getChainDecidedBy, getChainOutcome).'],
-  ['Observer', 'WorkflowEventBus, DependencyActivator, AuditLogger, NotificationSender, MonitoringCollector', 'working', 'Each instance has its own bus; DependencyActivator unlocks dependants; the audit trail is AuditLogger::getLog(). EngineGateway publishes the events.'],
-  ['Strategy', 'TaskRouter, AssignmentStrategy, RoleBasedAssignment, WorkloadAssignment', 'working', '"auto-assign" routes a task with the strategy its spec names. Workload is fed by the gateway (no engine class updates it).'],
+  ['Observer', 'WorkflowEventBus, DependencyActivator, AuditLogger, NotificationSender, MonitoringCollector', 'working', 'WorkflowManager publishes no events, so each case has its own bus and the gateway publishes every state change. DependencyActivator unlocks dependants after execute(); after WorkflowManager::complete the Facade has already notified the Mediator. The audit trail is AuditLogger::getLog().'],
+  ['Strategy', 'TaskRouter, AssignmentStrategy, RoleBasedAssignment, WorkloadAssignment', 'working', 'WorkflowManager::start routes every task that has a strategy; "auto-assign" routes one task with the same TaskRouter. Workload is fed by the gateway (no engine class updates it).'],
 ];
 
 const GENERIC_CLASSES = [
-  'WorkComponent', 'WorkStage', 'WorkItem', 'ManualTask', 'AutomatedTask', 'ApprovalTask',
+  'WorkflowManager', 'WorkComponent', 'WorkStage', 'WorkItem', 'ManualTask', 'AutomatedTask', 'ApprovalTask',
   'WorkItemState', 'CreatedState', 'AvailableState', 'AssignedState', 'InProgressState', 'CompletedState',
   'RejectedState', 'CancelledState', 'EscalatedState', 'WorkIterator', 'DepthFirstIterator', 'ReadyTaskIterator',
   'DefinitionBuilder', 'CodeDefinitionBuilder', 'DefinitionRegistry', 'WorkflowDefinition', 'WorkflowInstance',
@@ -52,10 +53,9 @@ const GENERIC_CLASSES = [
 ];
 
 const TEMPORARY = [
-  ['server/EngineGateway (internals)', 'WorkflowManager (Facade): it has no accessors for an instance\'s tasks', 'Member 7'],
-  ['scenarios/TaskLookup', 'finding a task by ID in an instance (kept private in WorkflowManager)', 'Member 7'],
   ['scenarios/StageNames', 'a name on WorkStage (it declares one, but nothing can set or read it)', 'Member 1'],
   ['EngineGateway::syncWorkload', 'updating Participant workload (no engine class calls itemAssigned)', 'Members 4 / 6'],
+  ['WorkflowInstance::setStatus("Running") after an undo', 'WorkflowManager::undo resetting the status it set to "Completed" when a completion is undone', 'Member 7'],
 ];
 
 const ui = {

@@ -12,8 +12,9 @@ A locally run website that drives the **real TIVIDY C++11 engine** for **any** w
 
 The browser contains no workflow logic and no industry. Every scenario is a JSON **spec**. One
 `GenericDirector` (web/scenarios) builds any spec with the engine's real `CodeDefinitionBuilder` and
-registers it in the real `DefinitionRegistry`. Every button calls a small C++ HTTP server, which calls
-the engine through one class, `EngineGateway`.
+registers it in the real `DefinitionRegistry`. Every button calls a small C++ HTTP server whose one
+engine class, `EngineGateway`, is a thin JSON layer over the engine's Facade, `WorkflowManager`: every
+case is created, started, inspected and acted on through it (see `INTEGRATION.md`).
 
 Everything runs **offline**: no CDNs, fonts or downloads. All state is in memory: restarting the server
 (or **Reset demo**) removes custom scenarios and reloads the templates.
@@ -122,9 +123,9 @@ approval chains, and decisions with fewer than two branches.
 |---|---|
 | Choose an industry, start independent instances, compare side by side | One tab per scenario. Fill in the information for the case (or pick an example case), then *Create case*; use *Open* / *Open beside*. After every action an isolation check re-reads the other instances from the engine. |
 | Composite tree, states, assignees, available work | Instance pane: stages, sub-stages and tasks with state colours. *Available work* is `ReadyTaskIterator`. |
-| Every action; refusals | Click a task: `assignTo`, *auto-assign (strategy)*, `makeAvailable`, `start`, `execute`, `complete`, `approve`, `reject`, `cancel`, `escalate`. Each runs the real command or engine call; refusals show in red, warnings in amber. |
+| Every action; refusals | Click a task: `assignTo`, *auto-assign (strategy)*, `makeAvailable`, `start`, `execute`, `complete`, `approve`, `reject`, `cancel`, `escalate`. Each goes through `WorkflowManager` (its command runs in the case's `CommandProcessor`), except `execute` and auto-assign, which the Facade does not offer; refusals show in red, warnings in amber. |
 | Routing / decisions | A task with a *decision* tag shows a branch selector when completed: the rule's choice or the runtime choice. |
-| Undo, snapshots | *Undo* (`CommandProcessor::undo`), *Snapshot*, *Restore*. |
+| Undo, snapshots | *Undo* (`WorkflowManager::undo`), *Snapshot* (`WorkflowInstance::createSnapshot`), *Restore* (`WorkflowManager::restoreSnapshot`). |
 | Contention, chain escalation | *Resources* card (live places) and *Approval chain* cards with generic levels. |
 | History / audit trail | `AuditLogger` lines, `CommandProcessor::getHistory()`, `NotificationSender`. |
 | Which classes and patterns took part | **Patterns in action** panel; every step is tagged *engine*, *scenario rule*, *temporary web stand-in* or *not used*. |
@@ -139,14 +140,15 @@ web/
   templates/                 scenario specs loaded at startup (one .json per scenario)
   server/                    C++ HTTP server + the ONE engine gateway
     main.cpp                 routes (cpp-httplib), JSON in/out
-    EngineGateway.*          all engine access; generic; mirrors WorkflowManager
+    EngineGateway.*          all engine access: a thin JSON layer over WorkflowManager (the Facade)
     Trace.h                  "Patterns in action" steps
   scenarios/                 generic scenario support (no industry code)
     ScenarioSpec.*           spec model, parser and validator
     GenericDirector.*        the one Director for the real CodeDefinitionBuilder
     ScenarioRuntime.*        owns a scenario's Participants, Resources, approval chains and strategies
     Rules.*                  evaluates rules on input data
-    TaskLookup.*, StageNames.*  TEMPORARY stand-ins (see INTEGRATION.md)
+    DefinitionTree.*         reads a definition's tree for display (outside the Facade)
+    StageNames.*             TEMPORARY stand-in for stage names (see INTEGRATION.md)
   public/                    index.html, app.css, app.js (no frameworks, no build step)
   tests/api-smoke.ps1        end-to-end API checks
   third_party/               vendored header-only libraries
@@ -180,15 +182,16 @@ Press **Reset demo** first. Keep *Patterns in action* visible and point at the g
 
 **University admission (about 3.5 minutes)**
 1. **0:00** Tab *University admission*. Example case **Thandiwe**: *Create case* twice, then *Open beside*.
-   **Start** EDU-1.
-   - Click **complete** on *Check Documents*: refused by its state.
-   - Click **makeAvailable**: refused by the Mediator.
-2. **0:45** *Submit Application*: **auto-assign** (`TaskRouter` + `RoleBasedAssignment`), then start
-   and complete. `ITEM_COMPLETED` is published and **DependencyActivator** unlocks *Check Documents*.
-   Then *Check Documents*: auto-assign (`WorkloadAssignment`), start, complete. The fork opens both
-   verifications.
-3. **1:30** Both verifications: auto-assign, start, **execute** (Template Method). The join then opens
-   *Faculty Checks*: complete it.
+   **Start** EDU-1: `WorkflowManager::start` opens *Submit Application* and routes it with
+   `TaskRouter` + `RoleBasedAssignment` to the applicant.
+   - Click **complete** on *Check Documents*: WorkflowManager refuses (the Mediator says its
+     prerequisite is not complete).
+   - Click **makeAvailable**: refused the same way.
+2. **0:45** *Submit Application*: start and complete (`WorkflowManager::complete` runs a
+   `CompleteCommand`; the Mediator unlocks *Check Documents*). Then *Check Documents*: auto-assign
+   (`WorkloadAssignment`), start, complete. The fork opens both verifications.
+3. **1:30** Both verifications: auto-assign, start, **execute** (Template Method). On the second one,
+   `ITEM_COMPLETED` is published and **DependencyActivator** opens the join, *Faculty Checks*: complete it.
 4. **2:15** *Approve or Reject Application* (nested sub-stage *Admission decision*, **AuditDecorator**
    tag): assign, start (point at the audit line), **execute**. Risk 15 stops at **Approver level 1**.
    Notify: the instance is Finished and EDU-2 is unchanged (isolation line). Open the audit trail.
@@ -197,8 +200,8 @@ Press **Reset demo** first. Keep *Patterns in action* visible and point at the g
    **Undo** (one command) and **Snapshot / Restore** (status, case data and tree come back).
 
 **Patient booking (about 3.5 minutes)**
-6. **3:30** Tab *Patient booking*: example cases **Johan** and **Mandla**, side by side. For each: Register,
-   Verify Medical Aid (execute), Triage. On completing Triage, the **Triage outcome** selector is a
+6. **3:30** Tab *Patient booking*: example cases **Johan** and **Mandla**, side by side. For each: Register
+   (already assigned to reception by `WorkflowManager::start`), Verify Medical Aid (execute), Triage. On completing Triage, the **Triage outcome** selector is a
    runtime decision: choose **Routine**, and the emergency branch is cancelled with real commands.
 7. **4:45** **Live contention.** Assign Johan's *Book Appointment Slot* to **Dr van der Merwe**: granted,
    and the Resources card shows 0 of 1 free. Assign Mandla's to the same doctor: **refused** (amber).
