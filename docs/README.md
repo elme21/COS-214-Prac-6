@@ -26,8 +26,10 @@ These are the most current and comprehensive documents for TIVIDY:
 ## Requirements 
 - **[Requirements Spec](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS214_TIVIDY_Final_Project_Specification_2026%20(1)%20(2).pdf)**
   <br>*The given specification for the TIVIDY system*
-  
-- **[Full Technical Document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS%20214%20Prac%206%20Final.pdf)**
+  <!--//////////////////////////////////////////////////////////////////////////    !-->
+<!-- TODO Add final pdf link !-->
+  <!--//////////////////////////////////////////////////////////////////////////    !-->
+  - **[Full Technical Document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS%20214%20Prac%206%20Final.pdf)**
   <br>*The full document detailing the use of design patterns, planning and design of TIVIDY*
 
   ### Links to subtasks of the Full Technical spec:
@@ -36,13 +38,13 @@ These are the most current and comprehensive documents for TIVIDY:
   
   - **[Task 2](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%202%20revised.pdf)**
     
-  - **[Task 3](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%203.pdf)**
+  - **[Task 3](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%203%20revised.pdf)**
 
   - **[Task 4](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task4GOF.pdf)**
 
   - **[Task 5](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%205.pdf)**
 
-  - **[Task 6](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%206.pdf)**
+  - **[Task 6](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%206%20revised.pdf)**
 
   - **[Task 7](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%207.pdf)**
  
@@ -73,7 +75,7 @@ These are the most current and comprehensive documents for TIVIDY:
 - **[Sequence Diagram 2](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/SD2%20-%20Complete%20Work%20Item.jpg)** 
   <br>*Sequence diagram depicting a complete work item*
 
-- **[State Diagram ](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/STD_WorkItem_Lifecycle.jpg)** 
+- **[State Diagram ](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/STD_Work_Item_LifecycleFINAL.jpg)** 
   <br>*State diagram depicting a work item lifecycle*
 
 - **[University application workflow](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/University%20Application%20Workflow.jpg)** 
@@ -98,11 +100,21 @@ These are the most current and comprehensive documents for TIVIDY:
 - **[Slide Show](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Slide%20show%20pdf%20version.pdf)** 
   <br>*A link to the Slide show that will be used during the presentation*
 
- - **[Implementation planning document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Cos%20214%20prac%206_assignment%20planning.pdf)** 
+- **[Implementation planning document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Cos%20214%20prac%206_assignment%20planning.pdf)** 
   <br>*A document detailing some of the planning that was done to implement the design patterns*
 
 - **[Previous Task 2 document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%202.pdf)** 
   <br>*A previous version of Task 2, only detailing one possbile scenario/ use for TIVIDY, i.e. only describing university enrolment and not hospital admission.*
+
+- **[Previous State diagram](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/STD_WorkItem_Lifecycle.jpg)** 
+  <br>*A previous version of our state diagram depicting a work item lifecycle*
+
+- **[Previous Task 3](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%203.pdf)** 
+  <br>*A previous version of our Task 3, before the diagrams were updated to correspond to the implementation*
+
+- **[Previous Task 6](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%206.pdf)** 
+  <br>*A previous version of our Task 6, before the diagrams were updated to correspond to the implementation*
+
 
 
 
