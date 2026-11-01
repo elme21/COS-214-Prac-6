@@ -18,6 +18,7 @@ COPY . .
 RUN mkdir -p web/build \
  && g++ -std=c++11 -Wall -Wextra -include cstddef -I. -Iinclude \
         -Iweb/third_party -Iweb/third_party/nlohmann -Iweb/third_party/httplib \
+        -Iweb/scenarios -Iweb/server \
         -pthread -static-libstdc++ -static-libgcc \
         $(find src web/scenarios web/server -name '*.cpp') \
         -o web/build/tividy-web
