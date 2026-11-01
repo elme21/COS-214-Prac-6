@@ -7,9 +7,10 @@
 #include "ScenarioRuntime.h"
 #include "Rules.h"
 #include "StageNames.h"
-#include "TaskLookup.h"
+#include "DefinitionTree.h"
 
 // The real TIVIDY engine (include/)
+#include "WorkflowManager.h"
 #include "WorkComponent.h"
 #include "WorkItem.h"
 #include "WorkItemState.h"
@@ -23,13 +24,6 @@
 #include "CommandProcessor.h"
 #include "WorkflowCommand.h"
 #include "MakeAvailableCommand.h"
-#include "AssignCommand.h"
-#include "StartCommand.h"
-#include "CompleteCommand.h"
-#include "ApproveCommand.h"
-#include "RejectCommand.h"
-#include "CancelCommand.h"
-#include "EscalateCommand.h"
 #include "ReadyTaskIterator.h"
 #include "ResourceCoordinator.h"
 #include "Resource.h"
@@ -48,6 +42,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
 
@@ -66,15 +61,16 @@ struct EngineGateway::Row {
     const Participant* assignee;
 };
 
-/** One running workflow instance: real engine objects only, plus display bookkeeping. */
+/**
+ * One case. Its tree, mediator and command processor belong to WorkflowManager (reached with
+ * engineId); the gateway keeps only what the Facade does not have: the event bus and its listeners,
+ * the snapshot history, the case data being edited and display bookkeeping.
+ */
 struct EngineGateway::Instance {
-    std::string id;
+    std::string id;                                      // display id, e.g. EDU-1
     std::string label;
     ScenarioRuntime* scenario;
-
-    std::unique_ptr<WorkflowInstance> workflow;          // real Originator, owns the cloned tree
-    std::unique_ptr<ResourceCoordinator> mediator;       // real Mediator for this instance
-    std::unique_ptr<CommandProcessor> commands;          // real Invoker with its own history
+    std::string engineId;                                // WorkflowManager's id for this case
     std::vector<std::string> commandLabels;              // display text for getHistory(), same order
 
     std::unique_ptr<WorkflowEventBus> bus;               // real Subject (declared before its listeners)
@@ -86,15 +82,10 @@ struct EngineGateway::Instance {
     SnapshotHistory snapshots;                           // real Caretaker
     std::vector<std::string> snapshotLabels;
 
-    std::vector<std::shared_ptr<WorkComponent> > retiredRoots;            // replaced by a restore, kept alive
-    std::vector<std::unique_ptr<ResourceCoordinator> > retiredMediators;
-
     std::map<std::string, Participant*> workloadCounted;  // task id -> participant whose workload counts it
     Data data;                                            // working copy; stored with WorkflowInstance::setData
-    bool started;
 
-    Instance() : scenario(nullptr), started(false) {}
-    WorkComponent* root() const { return workflow->getRoot().get(); }
+    Instance() : scenario(nullptr) {}
 };
 
 /** Everything one action needs to pass around. */
@@ -158,9 +149,49 @@ std::string operationName(const std::string& action) {
     return action + "()";
 }
 
-std::string kindOf(const TaskRef& ref) {
-    if (asApprovalTask(ref) != nullptr) return "approval";
-    if (asAutomatedTask(ref) != nullptr) return "automated";
+/** The concrete command WorkflowManager runs for each action (for history labels and the trace). */
+std::string commandClass(const std::string& action) {
+    static std::map<std::string, std::string> table;
+    if (table.empty()) {
+        table["makeAvailable"] = "MakeAvailableCommand";
+        table["assign"] = "AssignCommand";
+        table["start"] = "StartCommand";
+        table["complete"] = "CompleteCommand";
+        table["approve"] = "ApproveCommand";
+        table["reject"] = "RejectCommand";
+        table["cancel"] = "CancelCommand";
+        table["escalate"] = "EscalateCommand";
+    }
+    std::map<std::string, std::string>::const_iterator it = table.find(action);
+    return it == table.end() ? std::string() : it->second;
+}
+
+/** Calls the WorkflowManager operation for one command action. */
+bool facadeCall(WorkflowManager& facade, const std::string& engineId, const std::string& action,
+                const std::string& taskId, Participant* participant) {
+    if (action == "makeAvailable") return facade.makeAvailable(engineId, taskId);
+    if (action == "assign") return facade.assign(engineId, taskId, participant);
+    if (action == "start") return facade.start(engineId, taskId);
+    if (action == "approve") return facade.approve(engineId, taskId);
+    if (action == "reject") return facade.reject(engineId, taskId);
+    if (action == "cancel") return facade.cancel(engineId, taskId);
+    if (action == "escalate") return facade.escalate(engineId, taskId);
+    facade.complete(engineId, taskId);   // throws if WorkflowManager refuses
+    return true;
+}
+
+std::string facadeOperation(const std::string& action) {
+    if (action == "start") return "start(instanceId, taskId)";
+    if (action == "assign") return "assign(instanceId, taskId, participant)";
+    return action + "(instanceId, taskId)";
+}
+
+ApprovalTask* approvalOf(WorkItem* item) { return dynamic_cast<ApprovalTask*>(item); }
+AutomatedTask* automatedOf(WorkItem* item) { return dynamic_cast<AutomatedTask*>(item); }
+
+std::string kindOf(WorkItem* item) {
+    if (approvalOf(item) != nullptr) return "approval";
+    if (automatedOf(item) != nullptr) return "automated";
     return "manual";
 }
 
@@ -205,27 +236,6 @@ std::string asText(const json& v) {
     return "";
 }
 
-void facadeStep(Trace& trace, const std::string& operation) {
-    trace.pending("WorkflowManager::" + operation, "Facade",
-                  "not used: WorkflowManager keeps each instance's tree, mediator and command history private (no "
-                  "accessor), so a case it creates cannot be shown or acted on, and its complete() needs an InProgress "
-                  "task that no Facade operation can produce. EngineGateway does the same steps with the real classes");
-}
-
-/** The real command for each action. */
-WorkflowCommand* commandFor(const std::string& action, WorkComponent* node, Participant* participant,
-                            std::string& className) {
-    if (action == "makeAvailable") { className = "MakeAvailableCommand"; return new MakeAvailableCommand(node); }
-    if (action == "assign") { className = "AssignCommand"; return new AssignCommand(node, participant); }
-    if (action == "start") { className = "StartCommand"; return new StartCommand(node); }
-    if (action == "complete") { className = "CompleteCommand"; return new CompleteCommand(node); }
-    if (action == "approve") { className = "ApproveCommand"; return new ApproveCommand(node); }
-    if (action == "reject") { className = "RejectCommand"; return new RejectCommand(node); }
-    if (action == "cancel") { className = "CancelCommand"; return new CancelCommand(node); }
-    if (action == "escalate") { className = "EscalateCommand"; return new EscalateCommand(node); }
-    return nullptr;
-}
-
 bool isAction(const std::string& action) {
     static const char* names[] = { "makeAvailable", "assign", "autoAssign", "start", "execute", "complete",
                                    "approve", "reject", "cancel", "escalate" };
@@ -242,6 +252,8 @@ bool readFile(const std::string& path, std::string& out) {
     return true;
 }
 
+bool terminal(const std::string& state) { return state == "Completed" || state == "Cancelled" || state == "Rejected"; }
+
 } // namespace
 
 // ===========================================================================
@@ -254,7 +266,8 @@ EngineGateway::EngineGateway(const std::string& dir) : templatesDir(dir), resetC
 }
 
 EngineGateway::~EngineGateway() {
-    instances.clear();       // instances point into the scenarios and the registry, so they go first
+    instances.clear();       // the cases' listeners first
+    manager.reset();         // the cases' trees point at the scenarios' participants and handlers
     scenarioList.clear();
     registry.reset();
 }
@@ -262,11 +275,14 @@ EngineGateway::~EngineGateway() {
 void EngineGateway::loadTemplates() {
     instances.clear();
     instanceOrder.clear();
+    manager.reset();
     scenarioList.clear();
     templateFlags.clear();
     templateFiles.clear();
     templateErrors.clear();
     registry.reset(new DefinitionRegistry());
+    router.reset(new TaskRouter());
+    manager.reset(new WorkflowManager(registry.get(), router.get()));
 
     std::vector<std::string> files;
     DIR* dir = opendir(templatesDir.c_str());
@@ -394,36 +410,63 @@ json EngineGateway::scenarios() {
 }
 
 // ===========================================================================
+// Reading a case through WorkflowManager
+// ===========================================================================
+
+std::vector<CaseTask> EngineGateway::tasksOf(const Instance& inst) {
+    // Ids, outermost components and items come from the Facade; the walk over WorkflowManager::getTree()
+    // with getChild() only puts them in tree order for display.
+    std::map<const WorkComponent*, std::string> idOf;
+    std::vector<std::string> ids = manager->getTaskIds(inst.engineId);
+    for (size_t i = 0; i < ids.size(); ++i) idOf[manager->getTask(inst.engineId, ids[i])] = ids[i];
+    std::vector<CaseTask> out;
+    std::function<void(WorkComponent*)> walk = [&](WorkComponent* node) {
+        std::map<const WorkComponent*, std::string>::const_iterator it = idOf.find(node);
+        if (it != idOf.end()) {
+            CaseTask task = { it->second, node, manager->getItem(inst.engineId, it->second) };
+            out.push_back(task);
+            return;
+        }
+        for (int i = 0; node->getChild(i) != nullptr; ++i) walk(node->getChild(i));
+    };
+    walk(manager->getTree(inst.engineId));
+    return out;
+}
+
+CaseTask EngineGateway::taskOf(const Instance& inst, const std::string& taskId) {
+    CaseTask task = { taskId, nullptr, manager->getItem(inst.engineId, taskId) };
+    if (task.item != nullptr) task.node = manager->getTask(inst.engineId, taskId);
+    return task;
+}
+
+WorkComponent* EngineGateway::rootOf(const Instance& inst) { return manager->getTree(inst.engineId); }
+
+bool EngineGateway::isStarted(const Instance& inst) { return manager->getStatus(inst.engineId) != "Created"; }
+
+std::string EngineGateway::displayStatus(const Instance& inst) {
+    std::string engine = manager->getStatus(inst.engineId);
+    if (engine == "Created") return engine;
+    std::vector<CaseTask> tasks = tasksOf(inst);
+    for (size_t i = 0; i < tasks.size(); ++i) if (!terminal(stateOf(tasks[i].node))) return "Running";
+    return "Finished";
+}
+
+size_t EngineGateway::historyDepth(const Instance& inst) {
+    return manager->getCommands(inst.engineId)->getHistory().size();
+}
+
+// ===========================================================================
 // Engine plumbing
 // ===========================================================================
 
-bool EngineGateway::runCommand(Instance& inst, WorkflowCommand* command, const std::string& label) {
-    bool ok = inst.commands->run(std::unique_ptr<WorkflowCommand>(command));
-    if (ok) inst.commandLabels.push_back(label);
-    return ok;
-}
-
-void EngineGateway::wire(Instance& inst, Trace& trace) {
-    WorkComponent* root = inst.root();
-    std::vector<TaskRef> tasks = allTasks(root);
-    for (size_t i = 0; i < tasks.size(); ++i) inst.mediator->registerColleague(tasks[i].item);
-    const std::vector<std::pair<std::string, std::string> >& deps = inst.scenario->definition()->getDependencies();
-    for (size_t i = 0; i < deps.size(); ++i) {
-        inst.mediator->addDependency(findTask(root, deps[i].second).item, findTask(root, deps[i].first).item);
-    }
-    std::ostringstream detail;
-    detail << tasks.size() << " tasks registered; " << deps.size()
-           << " dependencies from WorkflowDefinition::getDependencies() added for THIS instance's task objects";
-    trace.engine("ResourceCoordinator::registerColleague / addDependency", "Mediator", detail.str());
-}
-
 void EngineGateway::configure(Instance& inst, Trace& trace) {
+    // WorkflowManager has no setter for these, so they are called on the item it hands out.
     const ScenarioSpec& spec = inst.scenario->spec();
     std::vector<const TaskSpec*> tasks = spec.allTasks();
     for (size_t i = 0; i < tasks.size(); ++i) {
         const TaskSpec& t = *tasks[i];
-        TaskRef ref = findTask(inst.root(), t.id);
-        if (ApprovalTask* approval = asApprovalTask(ref)) {
+        WorkItem* item = manager->getItem(inst.engineId, t.id);
+        if (ApprovalTask* approval = approvalOf(item)) {
             double value = t.requestValue;
             std::string from = "fixed value";
             if (!t.requestField.empty()) {
@@ -433,9 +476,9 @@ void EngineGateway::configure(Instance& inst, Trace& trace) {
             approval->setRequestValue(value);
             std::ostringstream detail;
             detail << t.name << ": request value " << value << " (" << from << ") travels down the chain";
-            trace.engine("ApprovalTask::setRequestValue", "Chain of Responsibility", detail.str());
+            trace.engine("WorkflowManager::getItem -> ApprovalTask::setRequestValue", "Chain of Responsibility", detail.str());
         }
-        if (AutomatedTask* automated = asAutomatedTask(ref)) {
+        if (AutomatedTask* automated = automatedOf(item)) {
             bool succeeds = t.successRule.present ? ruleHolds(t.successRule, inst.data) : t.succeeds;
             automated->setStepSucceeds(succeeds);
             if (!succeeds || t.successRule.present) {
@@ -450,10 +493,10 @@ void EngineGateway::configure(Instance& inst, Trace& trace) {
 }
 
 void EngineGateway::publishChanges(Instance& inst, std::vector<Row>& seen, Trace& trace, bool fromUndo) {
-    // Announce every task whose state changed, one at a time: publishing ITEM_COMPLETED lets the
-    // real DependencyActivator unlock dependants, which are then announced in turn.
+    // WorkflowManager publishes no events, so the gateway announces every task whose state changed,
+    // one at a time, on the case's own WorkflowEventBus; the real listeners react.
     for (int guard = 0; guard < 500; ++guard) {
-        std::vector<TaskRef> tasks = allTasks(inst.root());
+        std::vector<CaseTask> tasks = tasksOf(inst);
         size_t i = 0;
         for (; i < tasks.size() && i < seen.size(); ++i) {
             if (stateOf(tasks[i].node) != seen[i].state) break;
@@ -467,13 +510,23 @@ void EngineGateway::publishChanges(Instance& inst, std::vector<Row>& seen, Trace
 
         EventType type = fromUndo ? EventType::EXTERNAL_EVENT : eventFor(to);
         std::string detail = (fromUndo ? "undo: " : "") + from + " -> " + to;
-        inst.bus->publish(Event(type, inst.id, tasks[i].item->getId(), detail, tasks[i].item));
+        std::vector<std::string> createdBefore;
+        for (size_t k = 0; k < tasks.size(); ++k) if (stateOf(tasks[k].node) == "Created") createdBefore.push_back(tasks[k].id);
+        inst.bus->publish(Event(type, inst.id, tasks[i].id, detail, tasks[i].item));
         trace.engine("WorkflowEventBus::publish(" + eventTypeToString(type) + ", " + tasks[i].item->getName() + ")",
                      "Observer (Subject)", detail + " -> AuditLogger, NotificationSender, MonitoringCollector notified");
         if (type == EventType::ITEM_COMPLETED) {
+            std::vector<std::string> unlocked;
+            for (size_t k = 0; k < createdBefore.size(); ++k) {
+                WorkComponent* node = manager->getTask(inst.engineId, createdBefore[k]);
+                if (stateOf(node) == "Available") unlocked.push_back(manager->getItem(inst.engineId, createdBefore[k])->getName());
+            }
             trace.engine("DependencyActivator::update()", "Observer -> Mediator",
-                         "calls Colleague::changed(\"completed\"): ResourceCoordinator::notifyChanged asks each "
-                         "dependant canBecomeAvailable() and makes it available");
+                         "calls Colleague::changed(\"completed\"): ResourceCoordinator::notifyChanged asks each dependant "
+                         "canBecomeAvailable() - " +
+                             (unlocked.empty() ? std::string("nothing new to unlock (WorkflowManager::complete() had already "
+                                                             "notified the Mediator, or nothing waits on this task)")
+                                               : "made available: " + join(unlocked, ", ")));
         }
     }
 }
@@ -481,12 +534,12 @@ void EngineGateway::publishChanges(Instance& inst, std::vector<Row>& seen, Trace
 void EngineGateway::syncWorkload(Instance& inst, Trace* trace) {
     // Participant::workload() feeds WorkloadAssignment, but no engine class updates it, so the
     // gateway calls the real itemAssigned()/itemReleased() whenever a task's holder changes.
-    std::vector<TaskRef> tasks = allTasks(inst.root());
+    std::vector<CaseTask> tasks = tasksOf(inst);
     std::vector<std::string> changes;
     for (size_t i = 0; i < tasks.size(); ++i) {
         std::string s = stateOf(tasks[i].node);
         Participant* holder = (s == "Assigned" || s == "InProgress") ? tasks[i].node->getAssignee() : nullptr;
-        Participant*& counted = inst.workloadCounted[tasks[i].item->getId()];
+        Participant*& counted = inst.workloadCounted[tasks[i].id];
         if (counted == holder) continue;
         if (counted != nullptr) { counted->itemReleased(); changes.push_back(counted->getName() + " -1"); }
         if (holder != nullptr) { holder->itemAssigned(); changes.push_back(holder->getName() + " +1"); }
@@ -499,45 +552,45 @@ void EngineGateway::syncWorkload(Instance& inst, Trace* trace) {
     }
 }
 
-void EngineGateway::updateStatus(Instance& inst) {
-    if (!inst.started) {
-        inst.workflow->setStatus("Created");
-    } else {
-        std::vector<TaskRef> tasks = allTasks(inst.root());
-        bool finished = true;
-        for (size_t i = 0; i < tasks.size(); ++i) {
-            std::string s = stateOf(tasks[i].node);
-            if (s != "Completed" && s != "Cancelled" && s != "Rejected") finished = false;
-        }
-        inst.workflow->setStatus(finished ? "Finished" : "Running");
-    }
-    inst.workflow->setData(inst.data);
-}
+void EngineGateway::storeData(Instance& inst) { manager->getInstance(inst.engineId)->setData(inst.data); }
 
-std::vector<EngineGateway::Row> EngineGateway::rowsOf(WorkComponent* root) {
+std::vector<EngineGateway::Row> EngineGateway::rowsOf(const Instance& inst) {
     std::vector<Row> result;
-    std::vector<TaskRef> tasks = allTasks(root);
+    std::vector<CaseTask> tasks = tasksOf(inst);
     for (size_t i = 0; i < tasks.size(); ++i) {
-        Row r = { tasks[i].item->getId(), tasks[i].item->getName(), stateOf(tasks[i].node), tasks[i].node->getAssignee() };
+        Row r = { tasks[i].id, tasks[i].item->getName(), stateOf(tasks[i].node), tasks[i].node->getAssignee() };
         result.push_back(r);
     }
     return result;
 }
 
 void EngineGateway::releaseResource(Instance& inst, const std::string& taskId, Trace& trace, const std::string& why) {
-    TaskRef ref = findTask(inst.root(), taskId);
-    if (ref.item == nullptr || inst.data.count("resourceId." + taskId) == 0) return;
+    WorkItem* item = manager->getItem(inst.engineId, taskId);
+    if (item == nullptr || inst.data.count("resourceId." + taskId) == 0) return;
     std::string name = inst.data["resource." + taskId];
-    inst.mediator->release(ref.item);
+    manager->getMediator(inst.engineId)->release(item);
     inst.data.erase("resource." + taskId);
     inst.data.erase("resourceId." + taskId);
     inst.data.erase("resourceBy." + taskId);
-    trace.engine("ResourceCoordinator::release(" + ref.item->getName() + ")", "Mediator",
+    trace.engine("WorkflowManager::getMediator -> ResourceCoordinator::release(" + item->getName() + ")", "Mediator",
                  why + ": " + name + " gets its place back (Resource::giveBack)");
 }
 
+void EngineGateway::noticeRouted(Instance& inst, Context& ctx, const std::vector<Row>& before, const std::string& skipId) {
+    // Tasks WorkflowManager assigned by itself (its start() routes tasks that have a strategy).
+    std::vector<Row> after = rowsOf(inst);
+    for (size_t i = 0; i < after.size() && i < before.size(); ++i) {
+        if (after[i].id == skipId || after[i].assignee == nullptr || after[i].assignee == before[i].assignee) continue;
+        if (after[i].state != "Assigned") continue;
+        ctx.tr.engine("TaskRouter::route(" + after[i].name + ") -> " + inst.scenario->strategyName(after[i].id) + "::route()",
+                      "Strategy", "called by WorkflowManager: chose " + after[i].assignee->getName() + " (" +
+                                      after[i].assignee->getRole() + ")");
+        afterAssign(inst, ctx, taskOf(inst, after[i].id), after[i].assignee->getID());
+    }
+}
+
 // ===========================================================================
-// WorkflowManager mirror
+// Cases: create, start, status (WorkflowManager)
 // ===========================================================================
 
 json EngineGateway::createInstance(const std::string& scenarioKey, const json& inputs, const std::string& label) {
@@ -571,8 +624,6 @@ json EngineGateway::createInstance(const std::string& scenarioKey, const json& i
     if (!problems.empty()) throw GatewayError(400, "The input data is not valid.", problems);
 
     Trace trace;
-    facadeStep(trace, "createInstance(definitionName)");
-
     std::unique_ptr<Instance> inst(new Instance());
     inst->scenario = &scenario;
     std::ostringstream id;
@@ -582,19 +633,13 @@ json EngineGateway::createInstance(const std::string& scenarioKey, const json& i
     inst->label = !label.empty() ? label : (!spec.subjectField.empty() && !data[spec.subjectField].empty()
                                                 ? data[spec.subjectField] : inst->id);
 
-    const WorkflowDefinition* def = registry->get(spec.name);
-    trace.engine("DefinitionRegistry::get(\"" + def->getName() + "\")", "Prototype (PrototypeManager)", "");
-    std::shared_ptr<WorkComponent> root = def->cloneRoot();
-    std::ostringstream cloneDetail;
-    cloneDetail << "deep copy: WorkStage::clone() copies each child (nested stages too), decorators clone what they "
-                   "wrap; " << allTasks(root.get()).size() << " NEW task objects with the same IDs";
-    trace.engine("WorkflowDefinition::cloneRoot()", "Prototype + Composite", cloneDetail.str());
-
-    inst->workflow.reset(new WorkflowInstance(root, "Created"));
-    inst->commands.reset(new CommandProcessor());
-    inst->mediator.reset(new ResourceCoordinator());
-    trace.engine("new WorkflowInstance / CommandProcessor / ResourceCoordinator", "Memento / Command / Mediator",
-                 "each instance gets its own tree, undo history and mediator");
+    inst->engineId = manager->createInstance(spec.name);
+    std::ostringstream detail;
+    detail << "DefinitionRegistry::get(\"" << spec.name << "\") -> WorkflowDefinition::cloneRoot() (Prototype: "
+           << manager->getTaskIds(inst->engineId).size() << " NEW task objects) -> new WorkflowInstance, "
+           << "ResourceCoordinator and CommandProcessor; every task registered with the Mediator and the "
+           << "definition's dependencies added. Case id " << inst->engineId;
+    trace.engine("WorkflowManager::createInstance(\"" + spec.name + "\")", "Facade", detail.str());
 
     inst->bus.reset(new WorkflowEventBus());
     inst->activator.reset(new DependencyActivator(inst->bus.get()));
@@ -602,11 +647,11 @@ json EngineGateway::createInstance(const std::string& scenarioKey, const json& i
     inst->notifier.reset(new NotificationSender(inst->bus.get()));
     inst->monitor.reset(new MonitoringCollector(inst->bus.get()));
     trace.engine("new WorkflowEventBus + DependencyActivator, AuditLogger, NotificationSender, MonitoringCollector",
-                 "Observer", "listeners subscribe to the instance's own event bus");
+                 "Observer", "WorkflowManager publishes no events, so each case gets its own bus here");
 
-    wire(*inst, trace);
     configure(*inst, trace);
-    updateStatus(*inst);
+    storeData(*inst);
+    trace.engine("WorkflowManager::getInstance -> WorkflowInstance::setData", "Memento (Originator)", "the case data");
     inst->bus->publish(Event(EventType::INSTANCE_CREATED, inst->id, "", "for " + inst->label));
     trace.engine("WorkflowEventBus::publish(INSTANCE_CREATED)", "Observer (Subject)", "");
 
@@ -614,7 +659,7 @@ json EngineGateway::createInstance(const std::string& scenarioKey, const json& i
     instanceOrder.push_back(newId);
     instances[newId] = std::move(inst);
     Instance& created = *instances[newId];
-    std::vector<Row> before = rowsOf(created.root());
+    std::vector<Row> before = rowsOf(created);
     return respond(created, true, newId + " created for " + created.label + ". Press Start.", false, trace, before,
                    console.lines());
 }
@@ -624,31 +669,32 @@ json EngineGateway::start(const std::string& instanceId) {
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
     Trace trace;
-    facadeStep(trace, "start(instanceId)");
-    std::vector<Row> before = rowsOf(inst.root());
-    if (inst.started) {
+    Context ctx(inst, trace, "");
+    std::vector<Row> before = rowsOf(inst);
+    if (isStarted(inst)) {
+        trace.engine("WorkflowManager::getStatus(\"" + inst.engineId + "\")", "Facade", manager->getStatus(inst.engineId));
         return respond(inst, false, "This instance has already been started.", false, trace, before, console.lines());
     }
 
+    manager->start(inst.engineId);
+    std::vector<Row> after = rowsOf(inst);
     std::vector<std::string> opened;
-    std::vector<TaskRef> tasks = allTasks(inst.root());
-    for (size_t i = 0; i < tasks.size(); ++i) {
-        // Same steps as WorkflowManager::start(): mediator check, then makeAvailable().
-        if (inst.mediator->canBecomeAvailable(tasks[i].item) && tasks[i].node->makeAvailable()) {
-            opened.push_back(tasks[i].item->getName());
-        }
+    for (size_t i = 0; i < after.size() && i < before.size(); ++i) {
+        if (after[i].state != before[i].state) opened.push_back(after[i].name + " (" + after[i].state + ")");
     }
-    trace.engine("WorkStage::createIterator() -> DepthFirstIterator", "Iterator", "walks every task of this instance");
-    trace.engine("ResourceCoordinator::canBecomeAvailable -> WorkComponent::makeAvailable()", "Mediator + State",
-                 "CreatedState -> AvailableState for: " + join(opened, ", "));
-    inst.started = true;
-    updateStatus(inst);
+    trace.engine("WorkflowManager::start(\"" + inst.engineId + "\")", "Facade",
+                 "ResourceCoordinator::canBecomeAvailable -> makeAvailable() (CreatedState -> AvailableState), then "
+                 "tasks with a strategy are routed by TaskRouter: " + join(opened, ", "));
+    noticeRouted(inst, ctx, before, "");
+    syncWorkload(inst, &trace);
+    storeData(inst);
     inst.bus->publish(Event(EventType::INSTANCE_STARTED, inst.id));
     trace.engine("WorkflowEventBus::publish(INSTANCE_STARTED)", "Observer (Subject)", "");
     std::vector<Row> seen = before;
     publishChanges(inst, seen, trace, false);
-    return respond(inst, true, inst.id + " started. Available now: " + join(opened, ", "), false, trace, before,
-                   console.lines());
+    std::string message = inst.id + " started. Now: " + join(opened, ", ");
+    if (!ctx.notices.empty()) message += ". " + join(ctx.notices, " ");
+    return respond(inst, true, message, ctx.warning, trace, before, console.lines());
 }
 
 json EngineGateway::complete(const std::string& i, const std::string& t, const std::string& branch) {
@@ -681,34 +727,19 @@ json EngineGateway::act(const std::string& instanceId, const std::string& taskId
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
     ScenarioRuntime& scenario = *inst.scenario;
-    TaskRef task = findTask(inst.root(), taskId);
+    CaseTask task = taskOf(inst, taskId);
     if (task.node == nullptr) throw GatewayError(404, "No task '" + taskId + "' in " + instanceId);
     if (!isAction(action)) throw GatewayError(400, "Unknown action '" + action + "'");
 
     Trace trace;
     Context ctx(inst, trace, branch);
-    facadeStep(trace, operationName(action));
     const std::string name = task.item->getName();
     const std::string before = stateOf(task.node);
-    std::vector<Row> rowsBefore = rowsOf(inst.root());
+    std::vector<Row> rowsBefore = rowsOf(inst);
 
-    // --- checks that refuse without running a command -------------------------------
+    // --- checks that refuse without calling the engine ------------------------------
     std::string refusal;
-    if (action == "makeAvailable") {
-        bool can = inst.mediator->canBecomeAvailable(task.item);
-        std::vector<std::string> waiting;
-        const TaskSpec* spec = scenario.spec().task(taskId);
-        for (size_t i = 0; spec != nullptr && i < spec->dependsOn.size(); ++i) {
-            TaskRef p = findTask(inst.root(), spec->dependsOn[i]);
-            if (p.item != nullptr && !p.item->isComplete()) waiting.push_back(p.item->getName() + " (" + stateOf(p.node) + ")");
-        }
-        trace.engine("ResourceCoordinator::canBecomeAvailable(" + name + ")", "Mediator",
-                     can ? "true: every prerequisite is complete" : "false: waiting for " + join(waiting, ", "));
-        if (!can) {
-            refusal = "Dependency not met: \"" + name + "\" cannot become available until " + join(waiting, ", ") +
-                      " is complete. The ResourceCoordinator (Mediator) refused.";
-        }
-    } else if (action == "assign") {
+    if (action == "assign") {
         if (scenario.participant(participantId) == nullptr) throw GatewayError(400, "Pick a participant to assign.");
     } else if (action == "autoAssign") {
         if (scenario.strategyFor(taskId) == nullptr) {
@@ -725,12 +756,13 @@ json EngineGateway::act(const std::string& instanceId, const std::string& taskId
     }
     if (!refusal.empty()) return respond(inst, false, refusal, false, trace, rowsBefore, console.lines());
 
-    bool ok = perform(inst, ctx, task, action, participantId);
+    std::string facadeRefusal;
+    bool ok = perform(inst, ctx, task, action, participantId, facadeRefusal);
 
     std::vector<Row> seen = rowsBefore;
     if (ok) publishChanges(inst, seen, trace, false);
     syncWorkload(inst, &trace);
-    updateStatus(inst);
+    storeData(inst);
 
     // Decorator effect: the real AuditDecorator writes one line per attempt to its sink (std::cout).
     json consoleLines = console.lines();
@@ -747,6 +779,8 @@ json EngineGateway::act(const std::string& instanceId, const std::string& taskId
         message = name + ": " + operationName(action) + (before == after ? " ran (still " + after + ")"
                                                                           : " moved it " + before + " -> " + after);
         if (!ctx.notices.empty()) message += ". " + join(ctx.notices, " ");
+    } else if (!facadeRefusal.empty()) {
+        message = facadeRefusal;
     } else if (action == "execute") {
         message = "Not allowed: execute() only runs a task that is InProgress. \"" + name + "\" is " + before +
                   ", so WorkItem::checkReady() returned false and the Template Method stopped.";
@@ -760,11 +794,11 @@ json EngineGateway::act(const std::string& instanceId, const std::string& taskId
     return respond(inst, ok, message, ctx.warning, trace, rowsBefore, consoleLines);
 }
 
-bool EngineGateway::perform(Instance& inst, Context& ctx, const TaskRef& task, const std::string& action,
-                            const std::string& participantId) {
+bool EngineGateway::perform(Instance& inst, Context& ctx, const CaseTask& task, const std::string& action,
+                            const std::string& participantId, std::string& facadeRefusal) {
     ScenarioRuntime& scenario = *inst.scenario;
     Trace& trace = ctx.tr;
-    const std::string id = task.item->getId();
+    const std::string id = task.id;
     const std::string name = task.item->getName();
     const std::string from = stateOf(task.node);
 
@@ -773,13 +807,16 @@ bool EngineGateway::perform(Instance& inst, Context& ctx, const TaskRef& task, c
     if (action == "execute") {
         ok = runTemplateMethod(inst, ctx, task);
     } else if (action == "autoAssign") {
+        // WorkflowManager routes only inside start(); for one task the GUI calls the same TaskRouter.
         AssignmentStrategy* strategy = scenario.strategyFor(id);
-        TaskRouter router(strategy);
-        ok = router.route(task.item);
+        router->setStrategy(strategy);
+        ok = router->route(task.item);
         Participant* chosen = task.node->getAssignee();
         trace.engine("TaskRouter::route(" + name + ") -> " + scenario.strategyName(id) + "::route()", "Strategy",
-                     ok ? "chose " + chosen->getName() + " (" + chosen->getRole() + ") and called WorkItem::assignTo()"
-                        : "returned false: nobody suitable, or the task's state refused assignTo()");
+                     (ok ? "chose " + chosen->getName() + " (" + chosen->getRole() + ") and called WorkItem::assignTo()"
+                         : std::string("returned false: nobody suitable, or the task's state refused assignTo()")) +
+                         ". WorkflowManager has no per-task auto-assign, so the GUI calls the TaskRouter it shares with "
+                         "WorkflowManager on the item from WorkflowManager::getItem");
         if (ok) {
             trace.engine(name + ".assignTo(" + chosen->getName() + ")", "State",
                          "WorkItem delegates to " + from + "State -> AssignedState. Not undoable: the strategy assigns "
@@ -788,20 +825,32 @@ bool EngineGateway::perform(Instance& inst, Context& ctx, const TaskRef& task, c
         }
     } else {
         Participant* who = action == "assign" ? scenario.participant(participantId) : nullptr;
-        std::string className;
-        WorkflowCommand* command = commandFor(action, task.node, who, className);
-        ok = runCommand(inst, command, className + "(" + id + ")");
-        std::string to = stateOf(task.node);
-        trace.engine(className + "(" + name + ") -> CommandProcessor::run()", "Command",
-                     ok ? "execute() returned true: pushed onto this instance's history (getHistory())"
-                        : "execute() returned false: not pushed, nothing to undo");
-        if (!task.decorators.empty()) {
-            trace.engine(join(task.decorators, " -> ") + " -> " + kindOf(task) + " task", "Decorator",
-                         "the command acts on the outermost decorator, which forwards to the task");
+        const std::string className = commandClass(action);
+        size_t depth = historyDepth(inst);
+        try {
+            ok = facadeCall(*manager, inst.engineId, action, id, who);
+        } catch (const std::exception& e) {
+            ok = false;
+            facadeRefusal = refusalText(inst, task, action, e.what());
         }
-        trace.engine(name + "." + operationName(action), "State",
-                     ok ? "WorkItem delegates to " + from + "State -> transition to " + to + "State"
-                        : "WorkItem delegates to " + from + "State, which returned false: not allowed in " + from);
+        if (historyDepth(inst) > depth) inst.commandLabels.push_back(className + "(" + id + ")");
+        std::string to = stateOf(task.node);
+        trace.engine("WorkflowManager::" + facadeOperation(action), "Facade",
+                     facadeRefusal.empty() ? "runs " + className + " through the case's CommandProcessor"
+                                           : "refused before running a command: " + facadeRefusal);
+        if (facadeRefusal.empty()) {
+            trace.engine(className + "(" + name + ") -> CommandProcessor::run()", "Command",
+                         ok ? "execute() returned true: pushed onto this case's history (getHistory())"
+                            : "execute() returned false: not pushed, nothing to undo");
+            std::vector<std::string> decorators = unwrapNode(task.node).decorators;
+            if (!decorators.empty()) {
+                trace.engine(join(decorators, " -> ") + " -> " + kindOf(task.item) + " task", "Decorator",
+                             "the command acts on the outermost decorator, which forwards to the task");
+            }
+            trace.engine(name + "." + operationName(action), "State",
+                         ok ? "WorkItem delegates to " + from + "State -> transition to " + to + "State"
+                            : "WorkItem delegates to " + from + "State, which returned false: not allowed in " + from);
+        }
     }
     if (!ok) return false;
 
@@ -811,9 +860,32 @@ bool EngineGateway::perform(Instance& inst, Context& ctx, const TaskRef& task, c
     return true;
 }
 
-void EngineGateway::afterAssign(Instance& inst, Context& ctx, const TaskRef& task, const std::string& participantId) {
+std::string EngineGateway::refusalText(Instance& inst, const CaseTask& task, const std::string& action,
+                                       const std::string& reason) {
+    const std::string name = task.item->getName();
+    const std::string state = stateOf(task.node);
+    if (reason.find("prerequisites") != std::string::npos) {
+        std::vector<std::string> waiting;
+        const TaskSpec* spec = inst.scenario->spec().task(task.id);
+        for (size_t i = 0; spec != nullptr && i < spec->dependsOn.size(); ++i) {
+            CaseTask p = taskOf(inst, spec->dependsOn[i]);
+            if (p.item != nullptr && !p.item->isComplete()) waiting.push_back(p.item->getName() + " (" + stateOf(p.node) + ")");
+        }
+        return "Dependency not met: \"" + name + "\" (" + state + ") cannot " + operationName(action) + " until " +
+               join(waiting, ", ") + " is complete. WorkflowManager refused: ResourceCoordinator::canBecomeAvailable "
+               "is false.";
+    }
+    if (reason.find("not running") != std::string::npos) {
+        return "Not allowed: the case is not running (press Start first). WorkflowManager refused " +
+               operationName(action) + " on \"" + name + "\" (" + state + ").";
+    }
+    return "Not allowed: " + operationName(action) + " is not permitted while \"" + name + "\" is in state " + state +
+           ". WorkflowManager refused: " + reason;
+}
+
+void EngineGateway::afterAssign(Instance& inst, Context& ctx, const CaseTask& task, const std::string& participantId) {
     ScenarioRuntime& scenario = *inst.scenario;
-    const std::string id = task.item->getId();
+    const std::string id = task.id;
     const std::string name = task.item->getName();
     Participant* who = scenario.participant(participantId);
     if (who == nullptr) return;
@@ -829,10 +901,12 @@ void EngineGateway::afterAssign(Instance& inst, Context& ctx, const TaskRef& tas
         ctx.notices.push_back(who->getName() + " has no resource of their own for this task. Escalate, then reassign.");
         return;
     }
-    bool granted = inst.mediator->requestResource(task.item, resource);
+    // WorkflowManager has no resource operation, so the GUI asks the case's mediator it hands out.
+    bool granted = manager->getMediator(inst.engineId)->requestResource(task.item, resource);
     std::ostringstream places;
     places << resource->getAvailable() << " of " << resource->getCapacity() << " places now free";
-    ctx.tr.engine("ResourceCoordinator::requestResource(" + name + ", " + resource->getName() + ")", "Mediator",
+    ctx.tr.engine("WorkflowManager::getMediator -> ResourceCoordinator::requestResource(" + name + ", " +
+                      resource->getName() + ")", "Mediator",
                   granted ? "GRANTED: Resource::take() - " + places.str()
                           : "REFUSED: Resource::isFree() is false - " + places.str());
     if (granted) {
@@ -849,17 +923,35 @@ void EngineGateway::afterAssign(Instance& inst, Context& ctx, const TaskRef& tas
     }
 }
 
-void EngineGateway::afterTransition(Instance& inst, Context& ctx, const TaskRef& task, const std::string& newState) {
-    const std::string id = task.item->getId();
+void EngineGateway::afterTransition(Instance& inst, Context& ctx, const CaseTask& task, const std::string& newState) {
     if (newState == "Completed") {
-        if (inst.scenario->spec().decisionAfter(id) != nullptr) decide(inst, ctx, id);
-        applyEffects(inst, ctx, id, "onComplete");
+        if (inst.scenario->spec().decisionAfter(task.id) != nullptr) decide(inst, ctx, task.id);
+        applyEffects(inst, ctx, task.id, "onComplete");
     } else if (newState == "Rejected") {
-        applyEffects(inst, ctx, id, "onReject");
+        applyEffects(inst, ctx, task.id, "onReject");
     } else if (newState == "Cancelled") {
-        releaseResource(inst, id, ctx.tr, "the holder was cancelled");
-        applyEffects(inst, ctx, id, "onCancel");
+        releaseResource(inst, task.id, ctx.tr, "the holder was cancelled");
+        applyEffects(inst, ctx, task.id, "onCancel");
     }
+}
+
+bool EngineGateway::facadeCancel(Instance& inst, Context& ctx, const std::string& taskId, const std::string& why) {
+    CaseTask ref = taskOf(inst, taskId);
+    if (ref.node == nullptr) return false;
+    std::string before = stateOf(ref.node);
+    size_t depth = historyDepth(inst);
+    bool ok = false;
+    std::string reason;
+    try {
+        ok = manager->cancel(inst.engineId, taskId);
+    } catch (const std::exception& e) {
+        reason = e.what();
+    }
+    if (historyDepth(inst) > depth) inst.commandLabels.push_back("CancelCommand(" + taskId + ")");
+    ctx.tr.engine("WorkflowManager::cancel(" + ref.item->getName() + ") -> CancelCommand", "Facade + Command + State",
+                  ok ? before + "State -> CancelledState (" + why + ")"
+                     : before + "State refused cancel()" + (reason.empty() ? std::string() : ": " + reason));
+    return ok;
 }
 
 void EngineGateway::decide(Instance& inst, Context& ctx, const std::string& taskId) {
@@ -892,13 +984,7 @@ void EngineGateway::decide(Instance& inst, Context& ctx, const std::string& task
     for (size_t b = 0; b < d.branches.size(); ++b) {
         if (&d.branches[b] == taken) continue;
         for (size_t t = 0; t < d.branches[b].tasks.size(); ++t) {
-            TaskRef ref = findTask(inst.root(), d.branches[b].tasks[t]);
-            if (ref.node == nullptr) continue;
-            std::string before = stateOf(ref.node);
-            bool ok = runCommand(inst, new CancelCommand(ref.node), "CancelCommand(" + ref.item->getId() + ")");
-            ctx.tr.engine("CancelCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
-                          ok ? before + "State -> CancelledState (branch '" + d.branches[b].label + "' not taken)"
-                             : before + "State refused cancel()");
+            facadeCancel(inst, ctx, d.branches[b].tasks[t], "branch '" + d.branches[b].label + "' not taken");
         }
     }
 }
@@ -914,32 +1000,46 @@ void EngineGateway::applyEffects(Instance& inst, Context& ctx, const std::string
     if (!e.outcome.empty()) inst.data["outcome"] = fillTemplate(e.outcome, inst.data);
     for (size_t i = 0; i < e.release.size(); ++i) releaseResource(inst, e.release[i], ctx.tr, spec->name + " " + when);
     for (size_t i = 0; i < e.cancel.size(); ++i) {
-        TaskRef ref = findTask(inst.root(), e.cancel[i]);
-        if (ref.node == nullptr) continue;
-        std::string before = stateOf(ref.node);
-        bool ok = runCommand(inst, new CancelCommand(ref.node), "CancelCommand(" + ref.item->getId() + ")");
-        ctx.tr.engine("CancelCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
-                      ok ? before + "State -> CancelledState" : before + "State refused cancel(); left as " + before);
-        if (ok) releaseResource(inst, e.cancel[i], ctx.tr, "the holder was cancelled");
+        if (facadeCancel(inst, ctx, e.cancel[i], spec->name + " " + when)) {
+            releaseResource(inst, e.cancel[i], ctx.tr, "the holder was cancelled");
+        }
     }
     for (size_t i = 0; i < e.unlock.size(); ++i) {
-        TaskRef ref = findTask(inst.root(), e.unlock[i]);
+        CaseTask ref = taskOf(inst, e.unlock[i]);
         if (ref.node == nullptr) continue;
         std::string before = stateOf(ref.node);
-        bool ok = runCommand(inst, new MakeAvailableCommand(ref.node), "MakeAvailableCommand(" + ref.item->getId() + ")");
-        ctx.tr.engine("MakeAvailableCommand(" + ref.item->getName() + ") -> CommandProcessor::run", "Command + State",
-                      ok ? before + "State -> AvailableState" : before + "State refused makeAvailable()");
+        size_t depth = historyDepth(inst);
+        bool ok = false;
+        try {
+            ok = manager->makeAvailable(inst.engineId, e.unlock[i]);
+            ctx.tr.engine("WorkflowManager::makeAvailable(" + ref.item->getName() + ") -> MakeAvailableCommand",
+                          "Facade + Command + State",
+                          ok ? before + "State -> AvailableState" : before + "State refused makeAvailable()");
+        } catch (const std::exception& e2) {
+            // An unlock effect re-opens a task whose AND-prerequisite will never complete (e.g. after a
+            // rejection), which WorkflowManager::makeAvailable refuses. The same real command is run through
+            // the case's CommandProcessor that WorkflowManager hands out, so it stays undoable.
+            ok = manager->getCommands(inst.engineId)->run(
+                std::unique_ptr<WorkflowCommand>(new MakeAvailableCommand(ref.node)));
+            ctx.tr.engine("WorkflowManager::getCommands -> CommandProcessor::run(MakeAvailableCommand(" +
+                              ref.item->getName() + "))", "Command + State",
+                          std::string("WorkflowManager::makeAvailable refused (") + e2.what() + "); the spec's unlock "
+                          "effect runs the same command through the case's processor: " +
+                              (ok ? before + "State -> AvailableState" : before + "State refused makeAvailable()"));
+        }
+        if (historyDepth(inst) > depth) inst.commandLabels.push_back("MakeAvailableCommand(" + e.unlock[i] + ")");
     }
 }
 
-bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx, const TaskRef& task) {
+bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx, const CaseTask& task) {
     Trace& trace = ctx.tr;
     const std::string name = task.item->getName();
     const std::string from = stateOf(task.node);
-    const std::string kind = kindOf(task);
+    const std::string kind = kindOf(task.item);
 
-    trace.pending("ExecuteCommand", "Command",
-                  "the engine has no command for execute(), so it is called directly and cannot be undone");
+    trace.pending("WorkflowManager::execute / ExecuteCommand", "Facade + Command",
+                  "WorkflowManager has no execute() and the engine has no command for it, so execute() is called on "
+                  "the task WorkflowManager::getTask returned; it cannot be undone");
     bool ready = task.node->getState()->canExecute();
     if (!ready) {
         task.node->execute();   // let the engine itself refuse: checkReady() is false
@@ -957,7 +1057,7 @@ bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx, const TaskRe
                      "checkReady() true -> onEnter() -> ManualTask::perform() returns false (waits for its assignee) "
                      "-> recordResult(false): stays " + to + "; finish it with complete()");
     } else if (kind == "automated") {
-        bool succeeds = asAutomatedTask(task)->getStepSucceeds();
+        bool succeeds = automatedOf(task.item)->getStepSucceeds();
         trace.engine(name + ".execute()", "Template Method",
                      std::string("checkReady() true -> onEnter() -> AutomatedTask::perform() returns stepSucceeds = ") +
                          (succeeds ? "true -> recordResult(true) -> complete(): InProgressState -> CompletedState"
@@ -966,9 +1066,9 @@ bool EngineGateway::runTemplateMethod(Instance& inst, Context& ctx, const TaskRe
         ctx.notices.push_back(succeeds ? "Automated step succeeded." : "Automated step FAILED: the task stays InProgress.");
         if (!succeeds) ctx.warning = true;
     } else {
-        // The chain's result as ApprovalTask kept it (path, outcome, decider): no web-side tracing needed.
-        const ApprovalTask& approval = *asApprovalTask(task);
-        std::vector<ChainLevelInfo> levels = inst.scenario->chainOf(task.item->getId());
+        // The chain's result as ApprovalTask kept it (path, outcome, decider).
+        const ApprovalTask& approval = *approvalOf(task.item);
+        std::vector<ChainLevelInfo> levels = inst.scenario->chainOf(task.id);
         trace.engine(name + ".execute()", "Template Method",
                      "checkReady() true -> onEnter() -> ApprovalTask::perform() sends an ApprovalRequest(value) down "
                      "the chain (ApprovalHandler::handleRequest -> tryDecide at each level) and keeps the result");
@@ -1013,24 +1113,31 @@ json EngineGateway::undo(const std::string& instanceId) {
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
     Trace trace;
-    facadeStep(trace, "undo (not offered by the facade)");
-    std::vector<Row> before = rowsOf(inst.root());
-    bool had = !inst.commands->getHistory().empty();
+    std::vector<Row> before = rowsOf(inst);
+    bool had = historyDepth(inst) > 0;
     std::string label = had && !inst.commandLabels.empty() ? inst.commandLabels.back() : std::string();
 
-    inst.commands->undo();
+    manager->undo(inst.engineId);
     if (had && !inst.commandLabels.empty()) inst.commandLabels.pop_back();
-    trace.engine("CommandProcessor::undo()", "Command (Invoker)",
+    trace.engine("WorkflowManager::undo(\"" + inst.engineId + "\") -> CommandProcessor::undo()", "Facade + Command (Invoker)",
                  had ? "popped " + label + " and called its undo()" : "history is empty: nothing to undo");
     if (had) {
         trace.engine(label + ".undo()", "Command (ConcreteCommand)",
                      "WorkComponent::restoreState(previous state, previous assignee) on THIS task only; "
                      "effects on other tasks or resources are not undone by the engine's commands");
     }
+    // WorkflowManager sets "Completed" when every task is complete but never sets it back: after undoing the
+    // last completion the case would refuse every action, so the real setStatus("Running") is called.
+    WorkflowInstance* workflow = manager->getInstance(inst.engineId);
+    if (workflow->getStatus() == "Completed" && displayStatus(inst) != "Finished") {
+        workflow->setStatus("Running");
+        trace.temporary("WorkflowInstance::setStatus(\"Running\")", "Facade",
+                        "WorkflowManager::undo leaves the status 'Completed' although a task is open again");
+    }
     std::vector<Row> seen = before;
     publishChanges(inst, seen, trace, true);
     syncWorkload(inst, &trace);
-    updateStatus(inst);
+    storeData(inst);
     std::string message = had ? "Undid " + label + "." : "Nothing to undo for " + inst.id + ".";
     return respond(inst, had, message, false, trace, before, console.lines());
 }
@@ -1040,15 +1147,17 @@ json EngineGateway::snapshot(const std::string& instanceId) {
     ConsoleCapture console;
     Instance& inst = instanceOrThrow(instanceId);
     Trace trace;
-    std::vector<Row> before = rowsOf(inst.root());
-    inst.workflow->setData(inst.data);
-    std::shared_ptr<InstanceSnapshot> snap = inst.workflow->createSnapshot();
+    std::vector<Row> before = rowsOf(inst);
+    WorkflowInstance* workflow = manager->getInstance(inst.engineId);
+    workflow->setData(inst.data);
+    std::shared_ptr<InstanceSnapshot> snap = workflow->createSnapshot();
     inst.snapshots.save(snap);
     std::ostringstream label;
     label << "#" << inst.snapshotLabels.size() + 1 << " at " << nowLabel() << " - " << snap->label();
     inst.snapshotLabels.push_back(label.str());
-    trace.engine("WorkflowInstance::setData + createSnapshot()", "Memento (Originator)",
-                 "copies the status and case data and clones the whole tree (Prototype) into an InstanceSnapshot");
+    trace.engine("WorkflowManager::getInstance -> WorkflowInstance::setData + createSnapshot()", "Memento (Originator)",
+                 "copies the status and case data and clones the whole tree (Prototype) into an InstanceSnapshot. "
+                 "WorkflowManager has no snapshot operation, so the GUI calls the instance it hands out");
     trace.engine("SnapshotHistory::save(snapshot)", "Memento (Caretaker)", "stores it without reading it");
     inst.bus->publish(Event(EventType::EXTERNAL_EVENT, inst.id, "", "snapshot " + label.str()));
     return respond(inst, true, "Snapshot " + label.str() + " saved.", false, trace, before, console.lines());
@@ -1060,26 +1169,27 @@ json EngineGateway::restoreSnapshot(const std::string& instanceId) {
     Instance& inst = instanceOrThrow(instanceId);
     ScenarioRuntime& scenario = *inst.scenario;
     Trace trace;
-    std::vector<Row> before = rowsOf(inst.root());
+    std::vector<Row> before = rowsOf(inst);
 
     std::shared_ptr<InstanceSnapshot> snap = inst.snapshots.latest();
     if (!snap) return respond(inst, false, "Take a snapshot first.", false, trace, before, console.lines());
     trace.engine("SnapshotHistory::latest()", "Memento (Caretaker)", "hands back the newest snapshot");
 
-    // Resources are held in the Mediator, outside the snapshot: hand back the old tree's places.
-    std::vector<TaskRef> oldTasks = allTasks(inst.root());
-    for (size_t i = 0; i < oldTasks.size(); ++i) inst.mediator->release(oldTasks[i].item);
-    trace.engine("ResourceCoordinator::release(every old task)", "Mediator", "the replaced tree gives its resources back");
+    // Resources are held in the Mediator, outside the snapshot: hand back the old tree's places first.
+    std::vector<CaseTask> oldTasks = tasksOf(inst);
+    ResourceCoordinator* oldMediator = manager->getMediator(inst.engineId);
+    for (size_t i = 0; i < oldTasks.size(); ++i) oldMediator->release(oldTasks[i].item);
+    trace.engine("WorkflowManager::getMediator -> ResourceCoordinator::release(every task)", "Mediator",
+                 "the tree being replaced gives its resources back");
 
-    inst.retiredRoots.push_back(inst.workflow->getRoot());
-    inst.retiredMediators.push_back(std::move(inst.mediator));
-    inst.workflow->restoreSnapshot(snap);
-    trace.engine("WorkflowInstance::restoreSnapshot(snapshot)", "Memento (Originator)",
-                 "restores status '" + inst.workflow->getStatus() + "', the case data and a fresh clone of the saved tree");
-    inst.mediator.reset(new ResourceCoordinator());
-    wire(inst, trace);
+    manager->restoreSnapshot(inst.engineId, snap);
+    trace.engine("WorkflowManager::restoreSnapshot(\"" + inst.engineId + "\", snapshot)", "Facade + Memento",
+                 "new CommandProcessor (undo history cleared), WorkflowInstance::restoreSnapshot (status '" +
+                     manager->getStatus(inst.engineId) + "', case data, a fresh clone of the saved tree), a new "
+                     "ResourceCoordinator, and every task and dependency registered again");
+    inst.commandLabels.clear();
 
-    inst.data = inst.workflow->getData();
+    inst.data = manager->getInstance(inst.engineId)->getData();
     trace.engine("WorkflowInstance::getData()", "Memento (Originator)", "the case data as it was when the snapshot was taken");
     std::vector<std::string> keys;
     for (Data::const_iterator it = inst.data.begin(); it != inst.data.end(); ++it) {
@@ -1088,9 +1198,10 @@ json EngineGateway::restoreSnapshot(const std::string& instanceId) {
     for (size_t k = 0; k < keys.size(); ++k) {
         const std::string& taskId = keys[k];
         Resource* resource = scenario.resource(inst.data["resourceId." + taskId]);
-        TaskRef task = findTask(inst.root(), taskId);
-        bool granted = task.item != nullptr && resource != nullptr && inst.mediator->requestResource(task.item, resource);
-        trace.engine("ResourceCoordinator::requestResource(" + taskId + ")", "Mediator",
+        WorkItem* item = manager->getItem(inst.engineId, taskId);
+        bool granted = item != nullptr && resource != nullptr &&
+                       manager->getMediator(inst.engineId)->requestResource(item, resource);
+        trace.engine("WorkflowManager::getMediator -> ResourceCoordinator::requestResource(" + taskId + ")", "Mediator",
                      granted ? "re-obtained the resource held when the snapshot was taken" : "that resource is no longer free");
         if (!granted) {
             inst.data.erase("resource." + taskId);
@@ -1099,13 +1210,8 @@ json EngineGateway::restoreSnapshot(const std::string& instanceId) {
         }
     }
 
-    inst.commands.reset(new CommandProcessor());
-    inst.commandLabels.clear();
-    trace.engine("new CommandProcessor()", "Command",
-                 "undo history cleared: the old commands point at the tree that was just replaced");
-    inst.started = inst.workflow->getStatus() != "Created";
     syncWorkload(inst, &trace);
-    updateStatus(inst);
+    storeData(inst);
     inst.bus->publish(Event(EventType::EXTERNAL_EVENT, inst.id, "", "restored " + inst.snapshotLabels.back()));
     trace.engine("WorkflowEventBus::publish(EXTERNAL_EVENT, restored)", "Observer (Subject)", "");
     return respond(inst, true, "Restored " + inst.snapshotLabels.back() + ". Undo history cleared.", false, trace,
@@ -1118,7 +1224,7 @@ json EngineGateway::restoreSnapshot(const std::string& instanceId) {
 
 json EngineGateway::respond(Instance& inst, bool ok, const std::string& message, bool warning, Trace& trace,
                             const std::vector<Row>& before, const json& console) {
-    std::vector<Row> after = rowsOf(inst.root());
+    std::vector<Row> after = rowsOf(inst);
     json changes = json::array();
     for (size_t i = 0; i < after.size() && i < before.size(); ++i) {
         if (after[i].state != before[i].state || after[i].assignee != before[i].assignee) {
@@ -1142,11 +1248,11 @@ json EngineGateway::treeNode(ScenarioRuntime& scenario, const Data& data, WorkCo
                     {"children", children}};
     }
 
-    TaskRef ref = refFor(node);
+    TreeTask ref = unwrapNode(node);
     const std::string id = ref.item->getId();
     const ScenarioSpec& spec = scenario.spec();
     const TaskSpec* t = spec.task(id);
-    json task = {{"type", "task"}, {"id", id}, {"name", ref.item->getName()}, {"kind", kindOf(ref)},
+    json task = {{"type", "task"}, {"id", id}, {"name", ref.item->getName()}, {"kind", kindOf(ref.item)},
                  {"state", stateOf(node)}, {"canExecute", node->getState()->canExecute()},
                  {"decorators", ref.decorators}, {"path", pathKey(path)}};
     Participant* who = node->getAssignee();
@@ -1160,7 +1266,7 @@ json EngineGateway::treeNode(ScenarioRuntime& scenario, const Data& data, WorkCo
                                                       : (t->resource.empty() ? std::string()
                                                                              : spec.resource(t->resource)->name);
     }
-    if (ApprovalTask* approval = asApprovalTask(ref)) {
+    if (ApprovalTask* approval = approvalOf(ref.item)) {
         task["requestValue"] = approval->getRequestValue();
         json chain = json::array();
         std::vector<ChainLevelInfo> levels = scenario.chainOf(id);
@@ -1176,7 +1282,7 @@ json EngineGateway::treeNode(ScenarioRuntime& scenario, const Data& data, WorkCo
                                    {"path", approval->getChainPath()},
                                    {"decidedBy", approval->getChainDecidedBy()}};
     }
-    if (AutomatedTask* automated = asAutomatedTask(ref)) task["stepSucceeds"] = automated->getStepSucceeds();
+    if (AutomatedTask* automated = automatedOf(ref.item)) task["stepSucceeds"] = automated->getStepSucceeds();
 
     if (const DecisionSpec* d = spec.decisionAfter(id)) {
         json branches = json::array();
@@ -1206,35 +1312,39 @@ json EngineGateway::treeNode(ScenarioRuntime& scenario, const Data& data, WorkCo
 
 json EngineGateway::instanceView(Instance& inst) {
     ScenarioRuntime& scenario = *inst.scenario;
-    WorkComponent* root = inst.root();
+    WorkComponent* root = rootOf(inst);
+    std::vector<CaseTask> tasks = tasksOf(inst);
+    std::map<const WorkComponent*, std::string> idOf;
+    for (size_t i = 0; i < tasks.size(); ++i) idOf[tasks[i].node] = tasks[i].id;
 
-    // "Available work" comes from the real ReadyTaskIterator.
+    // "Available work" comes from the real ReadyTaskIterator over WorkflowManager::getTree().
     json available = json::array();
     ReadyTaskIterator ready(root);
     while (ready.hasNext()) {
-        TaskRef ref = refFor(ready.next());
-        if (ref.item != nullptr) available.push_back(ref.item->getId());
+        std::map<const WorkComponent*, std::string>::const_iterator it = idOf.find(ready.next());
+        if (it != idOf.end()) available.push_back(it->second);
     }
 
     std::map<std::string, int> counts;
-    std::vector<TaskRef> tasks = allTasks(root);
     for (size_t i = 0; i < tasks.size(); ++i) counts[stateOf(tasks[i].node)]++;
 
     json data = json::object();
     for (Data::const_iterator d = inst.data.begin(); d != inst.data.end(); ++d) data[d->first] = d->second;
     json commandHistory = json::array();
     for (size_t i = inst.commandLabels.size(); i > 0; --i) commandHistory.push_back(inst.commandLabels[i - 1]);
+    size_t depth = historyDepth(inst);
 
-    return json{{"id", inst.id}, {"scenario", scenario.key()}, {"scenarioName", scenario.spec().name},
-                {"label", inst.label}, {"status", inst.workflow->getStatus()}, {"started", inst.started},
+    return json{{"id", inst.id}, {"scenario", scenario.key()},
+                {"scenarioName", scenario.spec().name}, {"label", inst.label}, {"status", displayStatus(inst)},
+                {"started", isStarted(inst)},
                 {"outcome", data.value("outcome", "")}, {"data", data},
                 {"tree", treeNode(scenario, inst.data, root, std::vector<int>())},
                 {"available", available}, {"counts", counts},
                 {"audit", inst.audit->getLog()}, {"notifications", inst.notifier->getSent()},
                 {"eventsTotal", inst.monitor->totalEvents()},
                 {"commandHistory", commandHistory},
-                {"commandDepth", static_cast<int>(inst.commands->getHistory().size())},
-                {"canUndo", !inst.commands->getHistory().empty()},
+                {"commandDepth", static_cast<int>(depth)},
+                {"canUndo", depth > 0},
                 {"snapshots", inst.snapshotLabels}};
 }
 
@@ -1298,10 +1408,10 @@ json EngineGateway::scenarioView(ScenarioRuntime& scenario) {
 
 json EngineGateway::summary(Instance& inst) {
     std::map<std::string, int> counts;
-    std::vector<TaskRef> tasks = allTasks(inst.root());
+    std::vector<CaseTask> tasks = tasksOf(inst);
     for (size_t i = 0; i < tasks.size(); ++i) counts[stateOf(tasks[i].node)]++;
     return json{{"id", inst.id}, {"scenario", inst.scenario->key()}, {"label", inst.label},
-                {"status", inst.workflow->getStatus()}, {"outcome", inst.data.count("outcome") ? inst.data["outcome"] : ""},
+                {"status", displayStatus(inst)}, {"outcome", inst.data.count("outcome") ? inst.data["outcome"] : ""},
                 {"counts", counts}, {"tasks", tasks.size()}};
 }
 
@@ -1338,4 +1448,3 @@ json EngineGateway::resources(const std::string& scenarioKey) {
     }
     return out;
 }
-

@@ -2,7 +2,7 @@
 // nothing can set or read it. Delete this when WorkStage exposes the name passed to addStage.
 #include "StageNames.h"
 
-#include "TaskLookup.h"
+#include "DefinitionTree.h"
 #include "WorkComponent.h"
 #include "WorkItem.h"
 
@@ -51,7 +51,7 @@ std::vector<std::string> walk(WorkComponent* node, const TreePath& path, int dep
                               std::map<std::string, std::string>& names) {
     std::vector<std::string> ids;
     if (node->getState() != nullptr) {          // a task (possibly decorated)
-        TaskRef ref = refFor(node);
+        TreeTask ref = unwrapNode(node);
         if (ref.item != nullptr) ids.push_back(ref.item->getId());
         return ids;
     }
