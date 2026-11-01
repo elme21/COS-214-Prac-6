@@ -26,28 +26,36 @@ These are the most current and comprehensive documents for TIVIDY:
 ## Requirements 
 - **[Requirements Spec](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS214_TIVIDY_Final_Project_Specification_2026%20(1)%20(2).pdf)**
   <br>*The given specification for the TIVIDY system*
-  <!--//////////////////////////////////////////////////////////////////////////    !-->
-<!-- TODO Add final pdf link !-->
-  <!--//////////////////////////////////////////////////////////////////////////    !-->
-  - **[Full Technical Document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS%20214%20Prac%206%20Final.pdf)**
+
+ - **[Practical 6 Spec](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS214_Practical6_TIVIDY%20(2).pdf)**
+  <br>*The spec for practical 6 in which we did the initial planning for TIVIDY*
+  
+
+- **[Full Technical Document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS%20214%20Prac%206%20Final.pdf)**
   <br>*The full document detailing the use of design patterns, planning and design of TIVIDY*
 
   ### Links to subtasks of the Full Technical spec:
 
   - **[Task 1](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS%20214%20Prac%206%20Task%201.pdf)**
+   <br>*Research Workflow Management Systems*
   
   - **[Task 2](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%202%20revised.pdf)**
+    <br>*Define the Scenario and System*
     
   - **[Task 3](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%203%20revised.pdf)**
+    <br>*UML Activity Diagrams*
 
   - **[Task 4](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task4GOF.pdf)**
+    <br>*Design Patterns*
 
   - **[Task 5](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%205.pdf)**
+    <br>*UML Class Diagram*
 
   - **[Task 6](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%206%20revised.pdf)**
+    <br>*Runtime Behaviour Diagrams*
 
   - **[Task 7](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Task%207.pdf)**
- 
+     <br>*Design Decisions and Revisions*
 
 
 
@@ -97,7 +105,7 @@ These are the most current and comprehensive documents for TIVIDY:
 
 ## Miscellaneous
 
-- **[Slide Show](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/slide%20show%20pdf%20version.pdf)** 
+- **[Slide Show](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Slide%20show%20pdf%20version.pdf)** 
   <br>*A link to the Slide show that will be used during the presentation*
 
 - **[Implementation planning document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/Cos%20214%20prac%206_assignment%20planning.pdf)** 
