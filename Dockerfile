@@ -1,4 +1,4 @@
-
+# TIVIDY web app: C++11 engine + HTTP server, built on Linux.
 # Build:  docker build -t tividy .
 # Run:    docker run --rm -p 8080:8080 tividy   then open http://localhost:8080
 
@@ -16,7 +16,7 @@ COPY . .
 #   -pthread          instead of -lws2_32 (Windows sockets are not needed on Linux)
 #   -static-*         so the binary does not depend on this stage's libstdc++
 RUN mkdir -p web/build \
- && g++ -std=c++11 -Wall -Wextra -include cstddef -I. -Iinclude \
+ && g++ -std=c++11 -Wall -Wextra -include cstddef -I. -Iinclude -Iweb/third_party \
         -pthread -static-libstdc++ -static-libgcc \
         $(find src web/scenarios web/server -name '*.cpp') \
         -o web/build/tividy-web
