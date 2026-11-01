@@ -26,9 +26,7 @@ These are the most current and comprehensive documents for TIVIDY:
 ## Requirements 
 - **[Requirements Spec](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS214_TIVIDY_Final_Project_Specification_2026%20(1)%20(2).pdf)**
   <br>*The given specification for the TIVIDY system*
-  <!--//////////////////////////////////////////////////////////////////////////    !-->
-<!-- TODO Add final pdf link !-->
-  <!--//////////////////////////////////////////////////////////////////////////    !-->
+  
   - **[Full Technical Document](https://github.com/elme21/COS-214-Prac-6/blob/main/docs/COS%20214%20Prac%206%20Final.pdf)**
   <br>*The full document detailing the use of design patterns, planning and design of TIVIDY*
 
