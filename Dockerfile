@@ -16,7 +16,8 @@ COPY . .
 #   -pthread          instead of -lws2_32 (Windows sockets are not needed on Linux)
 #   -static-*         so the binary does not depend on this stage's libstdc++
 RUN mkdir -p web/build \
- && g++ -std=c++11 -Wall -Wextra -include cstddef -I. -Iinclude -Iweb/third_party \
+ && g++ -std=c++11 -Wall -Wextra -include cstddef -I. -Iinclude \
+        -Iweb/third_party -Iweb/third_party/nlohmann -Iweb/third_party/httplib \
         -pthread -static-libstdc++ -static-libgcc \
         $(find src web/scenarios web/server -name '*.cpp') \
         -o web/build/tividy-web
