@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <vector>
 
 class DefinitionRegistry;
 class TaskRouter;
@@ -14,6 +15,7 @@ class WorkItem;
 class ResourceCoordinator;
 class CommandProcessor;
 class Participant;
+class InstanceSnapshot;
 
 /// @class WorkflowManager
 /// @brief Facade providing a simplified interface to the TIVIDY workflow system.
@@ -42,13 +44,13 @@ private:
 
     void completeInInstance(const std::string& instanceId, const std::string& taskId);
 
+    /// @brief Rebuilds task indexes and mediator registrations for a workflow instance.
+    void index(Runtime& run);
 public:
     /// @brief Constructs the workflow manager.
     /// @param registry Registry containing workflow definitions.
     /// @param router Task assignment and routing service.
-    WorkflowManager(
-        DefinitionRegistry* registry,
-        TaskRouter* router);
+    WorkflowManager( DefinitionRegistry* registry, TaskRouter* router);
 
     /// @brief Creates a new workflow instance in the Created state.
     /// @param definitionName Name of the workflow definition.
@@ -111,6 +113,22 @@ public:
     /// @param instanceId Identifier of the instance.
     /// @return Current workflow status.
     std::string getStatus( const std::string& instanceId);
+
+    /// @brief Retrieves the underlying WorkItem, even if decorated.
+/// @param instanceId Identifier of the instance.
+/// @param taskId Identifier of the task.
+/// @return The item, or nullptr if not found.
+WorkItem* getItem(const std::string& instanceId, const std::string& taskId);
+
+/// @brief Lists all task identifiers in a workflow instance.
+/// @param instanceId Identifier of the instance.
+/// @return Task identifiers, or an empty list if unknown.
+std::vector<std::string> getTaskIds(const std::string& instanceId);
+
+/// @brief Restores a snapshot and rebuilds task indexes and mediator registrations.
+/// @param instanceId Identifier of the instance.
+/// @param snapshot Snapshot to restore.
+void restoreSnapshot(const std::string& instanceId, std::shared_ptr<InstanceSnapshot> snapshot);
 };
 
 #endif

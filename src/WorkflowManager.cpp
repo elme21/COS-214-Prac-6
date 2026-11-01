@@ -18,6 +18,8 @@
 #include "../include/CancelCommand.h"
 #include "../include/EscalateCommand.h"
 #include "../include/MakeAvailableCommand.h"
+#include "../include/InstanceSnapshot.h"
+
 #include <stdexcept>
 #include <functional>
 #include <vector>
@@ -43,6 +45,16 @@ std::string WorkflowManager::createInstance(const std::string& name){
  run.definition=def;
  run.mediator=std::make_shared<ResourceCoordinator>();
  run.commands=std::make_shared<CommandProcessor>();
+
+index(run);
+
+ std::string id="instance-"+std::to_string(nextId++);
+ instances.emplace(id,std::move(run));
+
+ return id;
+}
+
+void WorkflowManager::index(Runtime& run){
 
  std::function<void(WorkComponent*)> walk=[&](WorkComponent* node){
 
@@ -86,9 +98,9 @@ std::string WorkflowManager::createInstance(const std::string& name){
     }
  };
 
- walk(root.get());
+ walk(run.instance->getRoot().get());
 
- for(const auto& edge:def->getDependencies()){
+ for(const auto& edge:run.definition->getDependencies()){
 
     auto a=run.items.find(edge.first);
     auto b=run.items.find(edge.second);
@@ -98,11 +110,6 @@ std::string WorkflowManager::createInstance(const std::string& name){
 
     run.mediator->addDependency(b->second,a->second);
  }
-
- std::string id="instance-"+std::to_string(nextId++);
- instances.emplace(id,std::move(run));
-
- return id;
 }
 
 void WorkflowManager::start(const std::string& id){
@@ -300,4 +307,50 @@ bool WorkflowManager::escalate(const std::string& id,const std::string& taskId){
 
 void WorkflowManager::undo(const std::string& id){
  getCommands(id)->undo();
+}
+
+WorkItem* WorkflowManager::getItem(const std::string& id,
+                                   const std::string& taskId){
+ auto it=instances.find(id);
+ if(it==instances.end()) return nullptr;
+
+ auto item=it->second.items.find(taskId);
+ return item==it->second.items.end()?nullptr:item->second;
+}
+
+std::vector<std::string> WorkflowManager::getTaskIds(const std::string& id){
+ std::vector<std::string> ids;
+
+ auto it=instances.find(id);
+ if(it==instances.end()) return ids;
+
+ for(const auto& pair:it->second.items)
+    ids.push_back(pair.first);
+
+ return ids;
+}
+
+void WorkflowManager::restoreSnapshot(const std::string& id,
+                                      std::shared_ptr<InstanceSnapshot> snapshot){
+
+ auto it=instances.find(id);
+
+ if(it==instances.end()||!snapshot)
+    return;
+
+ Runtime& run=it->second;
+
+ //clear command history before replacing the tree
+ run.commands=std::make_shared<CommandProcessor>();
+
+ //restore the saved workflow state and cloned component tree
+ run.instance->restoreSnapshot(snapshot);
+
+ //old task pointers and mediator registrations are no longer valid
+ run.components.clear();
+ run.items.clear();
+ run.mediator=std::make_shared<ResourceCoordinator>();
+
+ //rebuild indexes and dependencies for the restored tree
+ index(run);
 }
